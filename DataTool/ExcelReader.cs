@@ -36,11 +36,80 @@ namespace DataTool
             wb = new XLWorkbook(ms);
         }
 
-        struct SchemaColumn
+        public struct SchemaColumn
         {
             public string Name;
             public int ColumnNum;
             public IValidatable Validatable;
+        }
+
+        public struct DataColumn
+        {
+            public string Name;
+            public int ColumnNum;
+            public int TypeId;
+        }
+
+        public bool ReadSchemaHeader(IXLWorksheet item, out Dictionary<string, SchemaColumn> readColumns)
+        {
+            bool result = true;
+            readColumns = new Dictionary<string, SchemaColumn>();
+            foreach (var row in item.RowsUsed())
+            {
+                for (var i = 0; i < row.CellCount(); i++)
+                {
+                    var cell = row.Cell(i + 1);
+                    var colName = cell.GetValue<string>().ToLower();
+                    IValidatable outValue;
+                    if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName, out outValue))
+                        continue;
+
+                    var schemaColumn = new SchemaColumn();
+                    schemaColumn.Name = colName;
+                    schemaColumn.ColumnNum = i + 1;
+                    schemaColumn.Validatable = outValue;
+                    if (false == readColumns.TryAdd(schemaColumn.Name, schemaColumn))
+                    {
+                        Console.WriteLine($"[Error] Duplicate Column Name Detected: {schemaColumn.Name} in Sheet: {item.Name}");
+                        result = false;
+                    }
+                }
+
+                break;
+            }
+
+            return result;
+        }
+
+        public bool ReadDataHeader(IXLWorksheet item, DataSchema dataSchema, out Dictionary<string, DataColumn> dataHeader)
+        {
+            bool result = true;
+            dataHeader = new Dictionary<string, DataColumn>();
+            foreach (var row in item.RowsUsed())
+            {
+                for (var i = 0; i < row.CellCount(); i++)
+                {
+                    var cell = row.Cell(i + 1);
+                    var colName = cell.GetValue<string>().ToLower();
+                    var fieldInfo = dataSchema.GetFieldInfo(colName);
+                    if (fieldInfo == null)
+                        continue;
+
+                    var dataColumn = new DataColumn();
+                    dataColumn.Name = colName;
+                    dataColumn.ColumnNum = i + 1;
+                    dataColumn.TypeId = fieldInfo.TypeId;
+                    if (false == dataHeader.TryAdd(dataColumn.Name, dataColumn))
+                    {
+                        Console.WriteLine($"[Error] Duplicate Column Name Detected: {dataColumn.Name} in Sheet: {item.Name}");
+                        result = false;
+                    }
+                }
+
+                break;
+            }
+
+            return result;
         }
 
         public bool ReadSchema()
@@ -56,30 +125,8 @@ namespace DataTool
                 if (item.Name.ElementAt(0) != '_')
                     continue;
 
-                bool schemaHeaderError = false;
-                Dictionary<string, SchemaColumn> readColumns = new Dictionary<string, SchemaColumn>();
-                foreach (var row in item.RowsUsed())
-                {
-                    for (var i = 0; i < row.CellCount(); i++)
-                    {
-                        var cell = row.Cell(i + 1);
-                        var colName = cell.GetValue<string>().ToLower();
-                        IValidatable outValue;
-                        if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName, out outValue))
-                            continue;
-
-                        var schemaColumn = new SchemaColumn();
-                        schemaColumn.Name = colName;
-                        schemaColumn.ColumnNum = i + 1;
-                        schemaColumn.Validatable = outValue;
-                        if (false == readColumns.TryAdd(schemaColumn.Name, schemaColumn))
-                            Console.WriteLine($"[Error] Duplicate Column Name Detected: {schemaColumn.Name} in Sheet: {item.Name}");
-                    }
-
-                    break;
-                }
-
-                if (schemaHeaderError)
+                Dictionary<string, SchemaColumn> readColumns;
+                if (false == ReadSchemaHeader(item, out readColumns))
                     return false;
 
                 foreach (var pair in DataSchema.SchemaHeaderMap)
@@ -131,6 +178,12 @@ namespace DataTool
                             case "required":
                                 fieldInfo.Required = cell.GetValue<string>() == "true" ? true : false;
                                 break;
+                            case "server":
+                                fieldInfo.Server = cell.GetValue<string>() == "true" ? true : false;
+                                break;
+                            case "client":
+                                fieldInfo.Client = cell.GetValue<string>() == "true" ? true : false;
+                                break;
                         }
                     }
 
@@ -161,26 +214,28 @@ namespace DataTool
                     return false;
                 }
 
-                //foreach (var row in item.RowsUsed())
-                //{
-                //    for (var i = 0; i < row.CellCount(); i++)
-                //    {
-                //        var cell = row.Cell(i + 1);
-                //        var colName = cell.GetValue<string>().ToLower();
-                //        IValidatable outValue;
-                //        if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName, out outValue))
-                //            continue;
+                Dictionary<string, DataColumn> readDataHeader;
+                if (false == ReadDataHeader(item, schemaInfo, out readDataHeader))
+                    return false;
 
-                //        var schemaColumn = new SchemaColumn();
-                //        schemaColumn.Name = colName;
-                //        schemaColumn.ColumnNum = i + 1;
-                //        schemaColumn.Validatable = outValue;
-                //        if (false == readColumns.TryAdd(schemaColumn.Name, schemaColumn))
-                //            Console.WriteLine($"[Error] Duplicate Column Name Detected: {schemaColumn.Name} in Sheet: {item.Name}");
-                //    }
+                int rowCount = 0;
+                foreach (var row in item.RowsUsed())
+                {
+                    rowCount++;
+                    if (rowCount == 1)
+                        continue;
 
-                //    break;
-                //}
+                    foreach(var pair in readDataHeader)
+                    {
+                        var columnInfo = pair.Value;
+                        var cell = row.Cell(columnInfo.ColumnNum);
+                        var data = cell.GetValue<string>();
+
+                        columnInfo.TypeId
+                    }
+
+                    break;
+                }
             }
 
             return true;

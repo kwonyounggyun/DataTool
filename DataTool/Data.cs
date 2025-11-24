@@ -1,6 +1,7 @@
 ﻿using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
 using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -13,7 +14,7 @@ namespace DataTool
         bool Validate(string value);
     }
 
-    public class ValidId : IValidatable
+    public class ValidInt : IValidatable
     {
         public bool Validate(string value)
         {
@@ -30,7 +31,7 @@ namespace DataTool
         }
     }
 
-    public class ValidName : IValidatable
+    public class ValidString : IValidatable
     {
         public bool Validate(string value)
         {
@@ -58,7 +59,7 @@ namespace DataTool
         }
     }
 
-    public class ValidRequired : IValidatable
+    public class ValidBool : IValidatable
     {
         public bool Validate(string value)
         {
@@ -69,20 +70,14 @@ namespace DataTool
 
     class FieldInfo
     {
-        public int Index { get; set; }
-        public string Name { get; set; }
-        public int TypeId { get; set; }
-        public string RefSheetName { get; set; }
-        public string RefFieldName { get; set; }
-        public bool Required { get; set; }
-    }
-
-    class FieldComparer : IComparer<FieldInfo>
-    {
-        public int Compare(FieldInfo a, FieldInfo b)
-        {
-            return a.Index.CompareTo(b.Index);
-        }
+        public int Index { get; set; } = 0;
+        public string Name { get; set; } = "";
+        public int TypeId { get; set; } = 0;
+        public bool Server { get; set; } = false;
+        public bool Client { get; set; } = false;
+        public string RefSheetName { get; set; } = "";
+        public string RefFieldName { get; set; } = "";
+        public bool Required { get; set; } = false;
     }
 
     class DataSchema
@@ -104,22 +99,33 @@ namespace DataTool
 
         public static Dictionary<string, IValidatable> SchemaHeaderMap = new()
         {
-            { "id", new ValidId() },
-            { "name", new ValidName() },
+            { "id", new ValidInt() },
+            { "name", new ValidString() },
             { "type", new ValidType() },
-            { "required", new ValidRequired() },
+            { "required", new ValidBool() },
             { "ref", new ValidReference() },
+            { "server", new ValidBool() },
+            { "client", new ValidBool() },
         };
 
         public bool AddFieldInfo(FieldInfo info)
         {
-            return SchemaInfo.Add(info);
+            if (SchemaInfo[info.Name] != null)
+                return false;
+
+            SchemaInfo.Add(info.Name, info);
+            return true;
         }
 
-        private SortedSet<FieldInfo> SchemaInfo = new SortedSet<FieldInfo>(new FieldComparer());
+        public FieldInfo GetFieldInfo(string name)
+        {
+            return SchemaInfo[name];
+        }
+
+        private Dictionary<string, FieldInfo> SchemaInfo = new Dictionary<string, FieldInfo>();
     }
 
-    class Data
+    class IValue
     {
         
     }

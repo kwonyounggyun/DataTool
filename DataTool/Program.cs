@@ -7,4 +7,6 @@ ExcelReader reader = new ExcelReader();
 reader.Open("D:/Projects/Test.xlsx");
 
 ConcurrentDictionary<string, DataSchema> schema = new ConcurrentDictionary<string, DataSchema>();
-reader.ReadSchema(schema);
+reader.ReadSchema();
+
+reader.ReadData();
