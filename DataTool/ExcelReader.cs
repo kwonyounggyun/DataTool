@@ -152,7 +152,7 @@ namespace DataTool
                         switch(pair.Key)
                         {
                             case "name":
-                                fieldInfo.Name = cell.GetValue<string>();
+                                fieldInfo.Name = cell.GetValue<string>().ToLower();
                                 break;
                             case "type":
                                 fieldInfo.TypeId = DataSchema.TypeMap[cell.GetValue<string>()];
@@ -161,13 +161,13 @@ namespace DataTool
                                 fieldInfo.RefSheetName = cell.GetValue<string>();
                                 break;
                             case "required":
-                                fieldInfo.Required = cell.GetValue<string>() == "true" ? true : false;
+                                fieldInfo.Required = cell.GetValue<string>().ToLower() == "true" ? true : false;
                                 break;
                             case "server":
-                                fieldInfo.Server = cell.GetValue<string>() == "true" ? true : false;
+                                fieldInfo.Server = cell.GetValue<string>().ToLower() == "true" ? true : false;
                                 break;
                             case "client":
-                                fieldInfo.Client = cell.GetValue<string>() == "true" ? true : false;
+                                fieldInfo.Client = cell.GetValue<string>().ToLower() == "true" ? true : false;
                                 break;
                         }
                     }
@@ -420,6 +420,90 @@ namespace DataTool
             }
 
             return true;
+        }
+
+        public static void MakeCPP(ref string outFilePath, ref string usingNamespace, bool server = false)
+        {
+            StringBuilder mainHeader = new StringBuilder();
+            mainHeader.Append("#include <map>\r\n");
+            mainHeader.Append("#include <list>\r\n\r\n");
+            mainHeader.Append($"namespace {usingNamespace}\r\n");
+            mainHeader.Append("{\r\n");
+            MakeDefaultClass(ref mainHeader, 1);
+            mainHeader.Append("}\r\n");
+
+            foreach (var pair in ExcelReader.schema)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.Append($"namespace {usingNamespace}\r\n");
+                sb.Append("{\r\n");
+                pair.Value.GetCPP(ref sb, 1, server);
+                pair.Value.GetJsonParseCPP(ref sb, 1, server);
+                sb.Append("}\r\n");
+                Console.WriteLine($"{sb.ToString()}");
+
+                var outHeader = pair.Value.SheetName + ".h";
+                try
+                {
+                    // 파일에 content 내용을 씁니다. 파일이 이미 있다면 덮어씁니다.
+                    File.WriteAllText(outFilePath + "/"+ outHeader, sb.ToString());
+                    Console.WriteLine($"파일 쓰기 완료: {outHeader}");
+                    Console.WriteLine($"{sb.ToString()}");
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"{outHeader} 파일 쓰기 오류: {ex.Message}");
+                }
+
+                mainHeader.Append($"#include \"{outHeader}\"\r\n");
+            }
+
+            var header = usingNamespace + ".h";
+            try
+            {
+                // 파일에 content 내용을 씁니다. 파일이 이미 있다면 덮어씁니다.
+                File.WriteAllText(outFilePath + "/" + header, mainHeader.ToString());
+                Console.WriteLine($"파일 쓰기 완료: {header}");
+                Console.WriteLine($"{mainHeader.ToString()}");
+            }
+            catch (IOException ex)
+            {
+                Console.WriteLine($"{header} 파일 쓰기 오류: {ex.Message}");
+            }
+        }
+
+        private static void MakeDefaultClass(ref StringBuilder sb, int indentCount)
+        {
+            string indent = "";
+            for (int i = 0; i < indentCount; i++)
+                indent += "\t";
+
+            sb.Append($"{indent}struct Vec3\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent + "\t"}float x\r\n");
+            sb.Append($"{indent + "\t"}float y\r\n");
+            sb.Append($"{indent + "\t"}float z\r\n");
+            sb.Append($"{indent}}};\r\n");
+            sb.Append($"\r\n");
+            sb.Append($"{indent}void from_json(const json& j, Vec3& dataObj\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent + "\t"}dataObj.x = j.at(\"x\").get<float>();\r\n");
+            sb.Append($"{indent + "\t"}dataObj.y = j.at(\"y\").get<float>();\r\n");
+            sb.Append($"{indent + "\t"}dataObj.z = j.at(\"z\").get<float>();\r\n");
+            sb.Append($"{indent}}}\r\n");
+            sb.Append($"\r\n");
+            sb.Append($"{indent}struct Vec2\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent + "\t"}float x\r\n");
+            sb.Append($"{indent + "\t"}float y\r\n");
+            sb.Append($"{indent}}};\r\n");
+            sb.Append($"\r\n");
+            sb.Append($"{indent}void from_json(const json& j, Vec3& dataObj\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent + "\t"}dataObj.x = j.at(\"x\").get<float>();\r\n");
+            sb.Append($"{indent + "\t"}dataObj.y = j.at(\"y\").get<float>();\r\n");
+            sb.Append($"{indent}}}\r\n");
+            sb.Append($"\r\n");
         }
 
         private XLWorkbook? wb;

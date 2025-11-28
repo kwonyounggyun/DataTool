@@ -1,7 +1,9 @@
-﻿using DocumentFormat.OpenXml.EMMA;
+﻿using DocumentFormat.OpenXml.Drawing.Charts;
+using DocumentFormat.OpenXml.EMMA;
 using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
 using DocumentFormat.OpenXml.Office2010.Excel;
 using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -79,6 +81,67 @@ namespace DataTool
         public bool Client { get; set; } = false;
         public string RefSheetName { get; set; } = "";
         public bool Required { get; set; } = false;
+
+        public void GetCPP(ref StringBuilder sb, string indent)
+        {
+            var newName = char.ToUpper(Name[0]) + Name.Substring(1);
+            switch (TypeId)
+            {
+                case ValueType.INT:
+                    sb.Append($"{indent}int {newName} = 0;\r\n");
+                    break;
+                case ValueType.FLOAT:
+                    sb.Append($"{indent}float {newName} = 0.0f;\r\n");
+                    break;
+                case ValueType.STRING:
+                    sb.Append($"{indent}string {newName} = \"\";\r\n");
+                    break;
+                case ValueType.BOOL:
+                    sb.Append($"{indent}bool {newName} = false;\r\n");
+                    break;
+                case ValueType.DATETIME:
+                    sb.Append($"{indent}std::tm {newName};\r\n");
+                    break;
+                case ValueType.VEC3:
+                    sb.Append($"{indent}Vec3 {newName};\r\n");
+                    break;
+                case ValueType.LIST:
+                    sb.Append($"{indent}std::map<int, const {RefSheetName}*> {newName};\r\n");
+                    break;
+            }
+        }
+
+        public void GetJsonParseCPP(ref StringBuilder sb, string indent)
+        {
+            var newName = char.ToUpper(Name[0]) + Name.Substring(1);
+            switch (TypeId)
+            {
+                case ValueType.INT:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<int>();\r\n");
+                    break;
+                case ValueType.FLOAT:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<float>();\r\n");
+                    break;
+                case ValueType.STRING:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<std::string>();;\r\n");
+                    break;
+                case ValueType.BOOL:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
+                    break;
+                case ValueType.DATETIME:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
+                    break;
+                case ValueType.VEC3:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
+                    break;
+                case ValueType.LIST:
+                    sb.Append($"{indent}{{\r\n");
+                    sb.Append($"{indent + "\t"}auto ids = j.at(\"{Name}\").get<std::list<int>>();\r\n");
+                    sb.Append($"{indent + "\t"}for(auto id : ids) dataObj.{newName}[id] = nullptr;\r\n");
+                    sb.Append($"{indent}}}\r\n");
+                    break;
+            }
+        }
     }
 
     public enum ValueType
@@ -159,6 +222,68 @@ namespace DataTool
             return findInfo;
         }
 
+        public void GetCPP(ref StringBuilder sb, int indentCount, bool server = false)
+        {
+            string indent = "";
+            for (int i = 0; i < indentCount; i++)
+                indent += "\t";
+
+            sb.Append($"{indent}class {SheetName}\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent}public:\r\n");
+            foreach (var pair in SchemaInfo)
+            {
+                var field = pair.Value;
+                if (server)
+                {
+                    if (field.Server == false)
+                        continue;
+
+                    field.GetCPP(ref sb, indent + "\t");
+                }
+                else
+                {
+                    if (field.Client == false)
+                        continue;
+
+                    field.GetCPP(ref sb, indent + "\t");
+                }
+            }
+
+            sb.Append($"{indent}}};\r\n\r\n");
+        }
+
+        public void GetJsonParseCPP(ref StringBuilder jsonParser, int indentCount, bool server = false)
+        {
+            string indent = "";
+            for (int i = 0; i < indentCount; i++)
+                indent += "\t";
+
+            jsonParser.Append($"{indent}void from_json(const json& j, {SheetName}& dataObj)\r\n");
+            jsonParser.Append($"{indent}{{\r\n");
+
+            foreach (var pair in SchemaInfo)
+            {
+                var field = pair.Value;
+                if (server)
+                {
+                    if (field.Server == false)
+                        continue;
+
+                    field.GetJsonParseCPP(ref jsonParser, indent + "\t");
+                }
+                else
+                {
+                    if (field.Client == false)
+                        continue;
+
+                    field.GetJsonParseCPP(ref jsonParser, indent + "\t");
+                }
+            }
+
+            jsonParser.Append($"{indent }}}\r\n");
+        }
+
         public string SheetName { get; private set; }
         private Dictionary<string, FieldInfo> SchemaInfo = new Dictionary<string, FieldInfo>();
     }
@@ -193,7 +318,7 @@ namespace DataTool
 
         public string MakeJson()
         {
-            JObject jobj = new JObject();
+            JArray jArray = new JArray();
             foreach(var pair in _data)
             {
                 var rowObj = new JObject();
@@ -203,11 +328,11 @@ namespace DataTool
                     var key = _header[i].Name;
                     value[i].GetJson(ref key, ref rowObj);
                 }
-                jobj.Add(new JProperty(Convert.ToString(pair.Key), rowObj));
+                jArray.Add(rowObj);
             }
 
             var dataObject = new JObject();
-            dataObject.Add(new JProperty(SheetName, jobj));
+            dataObject.Add(new JProperty(SheetName, jArray));
 
             return dataObject.ToString();
         }

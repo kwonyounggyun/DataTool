@@ -10,3 +10,13 @@ ConcurrentDictionary<string, DataSchema> schema = new ConcurrentDictionary<strin
 reader.ReadSchema();
 
 reader.ReadData();
+
+string outpath = Path.GetFullPath(".");
+string nameSpace = "GameData";
+
+string serverPath = outpath + "/Server";
+string clientPath = outpath + "/Client";
+Directory.CreateDirectory(serverPath);
+Directory.CreateDirectory(clientPath);
+ExcelReader.MakeCPP(ref serverPath, ref nameSpace, true);
+ExcelReader.MakeCPP(ref clientPath, ref nameSpace, false);
