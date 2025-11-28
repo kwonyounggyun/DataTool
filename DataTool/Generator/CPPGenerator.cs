@@ -1,4 +1,5 @@
-﻿using DocumentFormat.OpenXml.Drawing.Charts;
+﻿using ClosedXML.Excel;
+using DocumentFormat.OpenXml.Drawing.Charts;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.VisualBasic.FileIO;
@@ -127,7 +128,13 @@ namespace DataTool.Generator
             switch (field.TypeId)
             {
                 case ValueType.INT:
-                    sb.Append($"{indent}int {newName} = 0;\r\n");
+                    if(field.RefSheetName.Length > 0)
+                    {
+                        sb.Append($"{indent}int _{newName} = 0;\r\n");
+                        sb.Append($"{indent}const {field.RefSheetName}* {newName} = nullptr;\r\n");
+                    }
+                    else
+                        sb.Append($"{indent}int {newName} = 0;\r\n");
                     break;
                 case ValueType.FLOAT:
                     sb.Append($"{indent}float {newName} = 0.0f;\r\n");
@@ -185,7 +192,10 @@ namespace DataTool.Generator
             switch (field.TypeId)
             {
                 case ValueType.INT:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<int>();\r\n");
+                    if (field.RefSheetName.Length > 0)
+                        sb.Append($"{indent}dataObj._{newName} = j.at(\"{field.Name}\").get<int>();\r\n");
+                    else
+                        sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<int>();\r\n");
                     break;
                 case ValueType.FLOAT:
                     sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<float>();\r\n");

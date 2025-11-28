@@ -1,4 +1,8 @@
-﻿using System;
+﻿using ClosedXML.Excel;
+using DocumentFormat.OpenXml.InkML;
+using DocumentFormat.OpenXml.Wordprocessing;
+using Newtonsoft.Json;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,15 +16,15 @@ namespace DataTool.Generator
         public override void Generate(ref string outFilePath, ref string usingNamespace, ref ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false)
         {
             StringBuilder mainHeader = new StringBuilder();
-            mainHeader.Append("using System.Collections.Generic;");
+            mainHeader.Append("using System.Collections.Generic;\r\n\r\n");
             mainHeader.Append($"namespace {usingNamespace}\r\n");
             mainHeader.Append("{\r\n");
             MakeDefaultClass(ref mainHeader, 1);
-            mainHeader.Append("}\r\n");
 
             foreach (var pair in schemaInfos)
             {
                 StringBuilder sb = new StringBuilder();
+                sb.Append($"using Newtonsoft.Json;\r\n");
                 sb.Append($"namespace {usingNamespace}\r\n");
                 sb.Append("{\r\n");
                 var schema = pair.Value;
@@ -42,6 +46,7 @@ namespace DataTool.Generator
                     Console.WriteLine($"{outHeader} 파일 쓰기 오류: {ex.Message}");
                 }
             }
+            mainHeader.Append("}\r\n");
 
             var header = usingNamespace + ".cs";
             try
@@ -62,10 +67,36 @@ namespace DataTool.Generator
             sb.Append($"{indent}public sealed class {schemaInfo.SheetName}\r\n");
             sb.Append($"{indent}{{\r\n");
 
+            sb.Append($"{indent + "\t"}public static bool Load(ref string fileDir, out Dictionary<int, {schemaInfo.SheetName}> dic)\r\n");
+            sb.Append($"{indent + "\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t"}dic = new Dictionary<int, {schemaInfo.SheetName}>();\r\n");
+            sb.Append($"{indent + "\t\t"}string filePath = fileDir + \"{schemaInfo.SheetName}.json\";\r\n");
+            sb.Append($"{indent + "\t\t"}try\r\n");
+            sb.Append($"{indent + "\t\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t\t"}string fileContent = File.ReadAllText(filePath);\r\n");
+            sb.Append($"{indent + "\t\t\t"}var list = JsonConvert.DeserializeObject<List<{ schemaInfo.SheetName}>>(fileContent);\r\n");
+            sb.Append($"{indent + "\t\t\t"}foreach (var item in list)\r\n");
+            sb.Append($"{indent + "\t\t\t\t"}dic.Add(item.Id, item);\r\n");
+            sb.Append($"{indent + "\t\t"}}}\r\n");
+            sb.Append($"{indent + "\t\t"}catch (FileNotFoundException)\r\n");
+            sb.Append($"{indent + "\t\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t\t"}Console.WriteLine($\"FileNotFound: {{filePath}}\");\r\n");
+            sb.Append($"{indent + "\t\t\t"}return false;\r\n");
+            sb.Append($"{indent + "\t\t"}}}\r\n");
+            sb.Append($"{indent + "\t\t"}catch (Exception ex)\r\n");
+            sb.Append($"{indent + "\t\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t\t"}Console.WriteLine($\"{{filePath}} read error: {{ex.Message}}\");\r\n");
+            sb.Append($"{indent + "\t\t\t"}return false;\r\n");
+            sb.Append($"{indent + "\t\t"}}}\r\n");
+            sb.Append($"{indent + "\t\t"}return true;\r\n");
+            sb.Append($"{indent + "\t"}}}\r\n");
+
+            StringBuilder linkSb = new StringBuilder();
             var fieldIndent = indent + "\t";
             foreach (var pair in schemaInfo.FieldInfos)
             {
                 var field = pair.Value;
+                bool link = field.RefSheetName.Length > 0;
                 if (server)
                 {
                     if (field.Server == false)
@@ -96,44 +127,55 @@ namespace DataTool.Generator
             switch (field.TypeId)
             {
                 case ValueType.INT:
-                    sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}int {newName} {{ get; set; }}\r\n");
+                    if (field.RefSheetName.Length > 0)
+                    {
+                        sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
+                        sb.Append($"{indent}public int _{newName} {{ get; set; }}\r\n");
+                        sb.Append($"{indent}[JsonIgnore]\r\n");
+                        sb.Append($"{indent}public {field.RefSheetName} {newName} {{ get; set; }}\r\n");
+                    }
+                    else
+                    {
+                        sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
+                        sb.Append($"{indent}public int {newName} {{ get; set; }}\r\n");
+                    }
                     break;
                 case ValueType.FLOAT:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}float {newName} {{ get; set; }}\r\n");
+                    sb.Append($"{indent}public float {newName} {{ get; set; }}\r\n");
                     break;
                 case ValueType.STRING:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}string {newName} {{ get; set; }};\r\n");
+                    sb.Append($"{indent}public string {newName} {{ get; set; }};\r\n");
                     break;
                 case ValueType.BOOL:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}bool {newName} {{ get; set; }};\r\n");
+                    sb.Append($"{indent}public bool {newName} {{ get; set; }};\r\n");
                     break;
                 case ValueType.DATETIME:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}DateTime {newName} {{ get; set; }};\r\n");
+                    sb.Append($"{indent}public DateTime {newName} {{ get; set; }};\r\n");
                     break;
                 case ValueType.VEC3:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}Vec3 {newName} {{ get; set; }};\r\n");
+                    sb.Append($"{indent}public Vec3 {newName} {{ get; set; }};\r\n");
                     break;
                 case ValueType.VEC2:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}Vec2 {newName} {{ get; set; }};\r\n");
+                    sb.Append($"{indent}public Vec2 {newName} {{ get; set; }};\r\n");
                     break;
                 case ValueType.LIST:
                     sb.Append($"{indent}[JsonProperty(\"{field.Name}\")]\r\n");
-                    sb.Append($"{indent}List<int> {newName} {{ get; set; }}\r\n");
+                    sb.Append($"{indent}public List<int> _{newName} {{ get; set; }}\r\n");
                     sb.Append($"{indent}[JsonIgnore]\r\n");
-                    sb.Append($"{indent}Dictionary<int, {field.RefSheetName}> Dic{newName} {{ get; set; }}\r\n");
+                    sb.Append($"{indent}public Dictionary<int, const {field.RefSheetName}> {newName} {{ get; set; }}\r\n");
                     break;
             }
         }
 
         protected override void GetParseJsonField(ref StringBuilder sb, ref string indent, ref FieldInfo field)
         {
+            var lamdat = () => { };
             return;
         }
 

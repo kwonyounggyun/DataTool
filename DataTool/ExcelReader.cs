@@ -90,6 +90,9 @@ namespace DataTool
                     dataColumn.Name = colName;
                     dataColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     dataColumn.TypeId = fieldInfo.TypeId;
+                    dataColumn.Required = fieldInfo.Required;
+                    dataColumn.Server = fieldInfo.Server;
+                    dataColumn.Client = fieldInfo.Client;
                     if (false == dataHeader.TryAdd(dataColumn.Name, dataColumn))
                     {
                         Console.WriteLine($"[Error] Duplicate Column Name Detected: {dataColumn.Name} in Sheet: {item.Name}");
@@ -173,7 +176,14 @@ namespace DataTool
                         }
                     }
 
-                    if(fieldInfo.TypeId == ValueType.LIST && fieldInfo.RefSheetName.Length <= 0)
+                    if(fieldInfo.TypeId != ValueType.INT && fieldInfo.TypeId != ValueType.LIST && fieldInfo.RefSheetName.Length > 0)
+                    {
+                        Console.WriteLine($"[Error] Only int and list have to be ref value : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
+                        schemaDataError = true;
+                        continue;
+                    }
+
+                    if (fieldInfo.TypeId == ValueType.LIST && fieldInfo.RefSheetName.Length <= 0)
                     {
                         Console.WriteLine($"[Error] List type have to need ref : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
                         schemaDataError = true;
@@ -230,7 +240,7 @@ namespace DataTool
                     {
                         var cell = row.Cell(columnInfo.ColumnNum);
 
-                        if(columnInfo.required && cell.IsEmpty())
+                        if(columnInfo.Required && cell.IsEmpty())
                         {
                             Console.WriteLine($"[Error] Required field is empty Sheet : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
                             readError = true;
@@ -445,22 +455,43 @@ namespace DataTool
                     if (true == rowDatas.TryGetValue(rowData.SheetName, out var outData))
                         outData.AddData(rowData);
                 }
-
-                Console.WriteLine($"{rowData.MakeJson()}");
             }
 
             return true;
         }
 
-        public static void MakeCPP(ref string outFilePath, ref string usingNamespace, bool server = false)
+        public static void MakeCPP(string outFilePath, string usingNamespace, bool server = false)
         {
             var generator = new CPPGenerator();
             generator.Generate(ref outFilePath, ref usingNamespace, ref schema, server);
         }
-        public static void MakeCSharp(ref string outFilePath, ref string usingNamespace, bool server = false)
+        public static void MakeCSharp(string outFilePath, string usingNamespace, bool server = false)
         {
             var generator = new CSharpGenerator();
             generator.Generate(ref outFilePath, ref usingNamespace, ref schema, server);
+        }
+        public static void MakeJson(string outDirPath, bool server = false)
+        {
+            foreach (var pair in schema)
+            {
+                var s = pair.Value;
+                RowData? data;
+                rowDatas.TryGetValue(s.SheetName, out data);
+                if (data == null)
+                    continue;
+
+                var outJson = outDirPath + "/" + data.SheetName + ".json";
+                try
+                {
+                    // 파일에 content 내용을 씁니다. 파일이 이미 있다면 덮어씁니다.
+                    File.WriteAllText(outJson, data.MakeJson(server));
+                    Console.WriteLine($"파일 쓰기 완료: {outJson}");
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"{outJson} 파일 쓰기 오류: {ex.Message}");
+                }
+            }
         }
 
         private XLWorkbook? wb;

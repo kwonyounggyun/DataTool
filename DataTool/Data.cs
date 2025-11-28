@@ -107,7 +107,9 @@ namespace DataTool
         public string Name;
         public int ColumnNum;
         public ValueType TypeId;
-        public bool required;
+        public bool Required;
+        public bool Server;
+        public bool Client;
     }
 
     public struct Vec3
@@ -199,7 +201,7 @@ namespace DataTool
             return _data.ContainsKey(id);
         }
 
-        public string MakeJson()
+        public string MakeJson(bool server)
         {
             JArray jArray = new JArray();
             foreach(var pair in _data)
@@ -208,16 +210,27 @@ namespace DataTool
                 var value = pair.Value;
                 for (int i = 0; i < _header.Count; i++)
                 {
-                    var key = _header[i].Name;
-                    value[i].GetJson(ref key, ref rowObj);
+                    if (server)
+                    {
+                        if (false == _header[i].Server)
+                            continue;
+
+                        var key = _header[i].Name;
+                        value[i].GetJson(ref key, ref rowObj);
+                    }
+                    else
+                    {
+                        if (false == _header[i].Client)
+                            continue;
+
+                        var key = _header[i].Name;
+                        value[i].GetJson(ref key, ref rowObj);
+                    }
                 }
                 jArray.Add(rowObj);
             }
 
-            var dataObject = new JObject();
-            dataObject.Add(new JProperty(SheetName, jArray));
-
-            return dataObject.ToString();
+            return jArray.ToString();
         }
 
         public string SheetName { get; private set; }
