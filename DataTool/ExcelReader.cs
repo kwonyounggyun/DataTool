@@ -1,8 +1,13 @@
 ﻿using ClosedXML.Excel;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.CustomXmlSchemaReferences;
 using DocumentFormat.OpenXml.Drawing.Charts;
+using DocumentFormat.OpenXml.Office2010.Excel;
 using DocumentFormat.OpenXml.Office2010.Word.DrawingGroup;
 using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Vml;
+using DocumentFormat.OpenXml.Wordprocessing;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -17,6 +22,7 @@ namespace DataTool
     internal class ExcelReader
     {
         public static ConcurrentDictionary<string, DataSchema> schema = new ConcurrentDictionary<string, DataSchema>();
+        public static ConcurrentDictionary<string, RowData> rowDatas = new ConcurrentDictionary<string, RowData>();
 
         // 파일이 열려있는 상태에서도 툴을 사용할 수 있게하기 위해 메모리에 올린 후 실행
         public void Open(string path)
@@ -36,29 +42,14 @@ namespace DataTool
             wb = new XLWorkbook(ms);
         }
 
-        public struct SchemaColumn
-        {
-            public string Name;
-            public int ColumnNum;
-            public IValidatable Validatable;
-        }
-
-        public struct DataColumn
-        {
-            public string Name;
-            public int ColumnNum;
-            public int TypeId;
-        }
-
         public bool ReadSchemaHeader(IXLWorksheet item, out Dictionary<string, SchemaColumn> readColumns)
         {
             bool result = true;
             readColumns = new Dictionary<string, SchemaColumn>();
             foreach (var row in item.RowsUsed())
             {
-                for (var i = 0; i < row.CellCount(); i++)
+                foreach (var cell in row.CellsUsed())
                 {
-                    var cell = row.Cell(i + 1);
                     var colName = cell.GetValue<string>().ToLower();
                     IValidatable outValue;
                     if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName, out outValue))
@@ -66,7 +57,7 @@ namespace DataTool
 
                     var schemaColumn = new SchemaColumn();
                     schemaColumn.Name = colName;
-                    schemaColumn.ColumnNum = i + 1;
+                    schemaColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     schemaColumn.Validatable = outValue;
                     if (false == readColumns.TryAdd(schemaColumn.Name, schemaColumn))
                     {
@@ -87,9 +78,8 @@ namespace DataTool
             dataHeader = new Dictionary<string, DataColumn>();
             foreach (var row in item.RowsUsed())
             {
-                for (var i = 0; i < row.CellCount(); i++)
+                foreach (var cell in row.CellsUsed())
                 {
-                    var cell = row.Cell(i + 1);
                     var colName = cell.GetValue<string>().ToLower();
                     var fieldInfo = dataSchema.GetFieldInfo(colName);
                     if (fieldInfo == null)
@@ -97,7 +87,7 @@ namespace DataTool
 
                     var dataColumn = new DataColumn();
                     dataColumn.Name = colName;
-                    dataColumn.ColumnNum = i + 1;
+                    dataColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     dataColumn.TypeId = fieldInfo.TypeId;
                     if (false == dataHeader.TryAdd(dataColumn.Name, dataColumn))
                     {
@@ -138,7 +128,7 @@ namespace DataTool
                     }
                 }
 
-                DataSchema schemaData = new DataSchema();
+                DataSchema schemaData = new DataSchema(item.Name.Substring(1));
                 bool schemaDataError = false;
                 int rowCount = 0;
                 foreach (var row in item.RowsUsed())
@@ -155,6 +145,7 @@ namespace DataTool
                         if (false == columnInfo.Validatable.Validate(cell.GetValue<string>()))
                         {
                             Console.WriteLine($"[Error] Wrong Value. Field Name : {pair.Key} Row Num : {row.RowNumber()} in Sheet: {item.Name}");
+                            schemaDataError = true;
                             continue;
                         }
 
@@ -167,13 +158,7 @@ namespace DataTool
                                 fieldInfo.TypeId = DataSchema.TypeMap[cell.GetValue<string>()];
                                 break;
                             case "ref":
-                                var value = cell.GetValue<string>();
-                                if (value.Length > 0)
-                                {
-                                    var subs = cell.GetValue<string>().Split(':');
-                                    fieldInfo.RefSheetName = subs[0];
-                                    fieldInfo.RefFieldName = subs[1];
-                                }
+                                fieldInfo.RefSheetName = cell.GetValue<string>();
                                 break;
                             case "required":
                                 fieldInfo.Required = cell.GetValue<string>() == "true" ? true : false;
@@ -187,13 +172,20 @@ namespace DataTool
                         }
                     }
 
+                    if(fieldInfo.TypeId == ValueType.LIST && fieldInfo.RefSheetName.Length <= 0)
+                    {
+                        Console.WriteLine($"[Error] List type have to need ref : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
+                        schemaDataError = true;
+                        continue;
+                    }
+
                     schemaData.AddFieldInfo(fieldInfo);
                 }
 
                 if (schemaDataError)
                     return false;
 
-                if(false == schema.TryAdd(item.Name.Substring(1), schemaData))
+                if(false == schema.TryAdd(schemaData.SheetName, schemaData))
                     Console.WriteLine($"[Error] Duplicate Schema Name Detected: {item.Name} in Excel: {excelPath}");
             }
 
@@ -207,7 +199,7 @@ namespace DataTool
                 if (item.Name.ElementAt(0) == '_')
                     continue;
 
-                DataSchema schemaInfo;
+                DataSchema? schemaInfo;
                 if (false == schema.TryGetValue(item.Name, out schemaInfo))
                 {
                     Console.WriteLine($"[Error] Schema Info Not Found. {item.Name} in Excel: {excelPath}");
@@ -218,24 +210,213 @@ namespace DataTool
                 if (false == ReadDataHeader(item, schemaInfo, out readDataHeader))
                     return false;
 
+                var header = new List<DataColumn>();
+                foreach (var pair in readDataHeader)
+                    header.Add(pair.Value);
+
+                var rowData = new RowData(item.Name, header);
                 int rowCount = 0;
+                bool readError = false;
                 foreach (var row in item.RowsUsed())
                 {
                     rowCount++;
                     if (rowCount == 1)
                         continue;
 
-                    foreach(var pair in readDataHeader)
+                    int id = 0;
+                    var dataRow = new List<IValue>();
+                    foreach(var columnInfo in header)
                     {
-                        var columnInfo = pair.Value;
                         var cell = row.Cell(columnInfo.ColumnNum);
-                        var data = cell.GetValue<string>();
 
-                        columnInfo.TypeId
+                        if(columnInfo.required && cell.IsEmpty())
+                        {
+                            Console.WriteLine($"[Error] Required field is empty Sheet : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                            readError = true;
+                            continue;
+                        }
+
+                        if (columnInfo.Name.CompareTo("id") == 0)
+                        {
+                            try
+                            {
+                                id = cell.GetValue<int>();
+                                var tVal = new TValue<int>(id);
+                                dataRow.Add(tVal);
+                            }
+                            catch (InvalidCastException e)
+                            {
+                                Console.WriteLine($"[Error] Id must be an integer : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath} Error : {e.Message}");
+                                readError = true;
+                            }
+
+                            continue;
+                        }
+
+                        try
+                        {
+                            switch (columnInfo.TypeId)
+                            {
+                                case ValueType.INT:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new TValue<int>(0);
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<int>();
+                                            var tVal = new TValue<int>(val);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.FLOAT:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new TValue<float>(0);
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<float>();
+                                            var tVal = new TValue<float>(val);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.STRING:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new TValue<string>("");
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<string>();
+                                            var tVal = new TValue<string>(val);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.BOOL:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new TValue<bool>(false);
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<bool>();
+                                            var tVal = new TValue<bool>(val);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.DATETIME:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new TValue<DateTime>(DateTime.Parse("2025-01-01 00:00:00"));
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<string>();
+                                            var tVal = new TValue<DateTime>(DateTime.Parse(val));
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.VEC3:
+                                    {
+                                        if (cell.IsEmpty())
+                                        {
+                                            Vec3 vec = new Vec3();
+                                            vec.x = 0.0f;
+                                            vec.y = 0.0f;
+                                            vec.z = 0.0f;
+                                            var tVal = new Vec3Value(vec);
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<string>();
+                                            var split = val.Split(',');
+                                            if (split.Length != 3)
+                                            {
+                                                Console.WriteLine($"[Error] Vec3 : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                                readError = true;
+                                                continue;
+                                            }
+
+                                            Vec3 vec = new Vec3();
+                                            vec.x = float.Parse(split[0]);
+                                            vec.y = float.Parse(split[1]);
+                                            vec.z = float.Parse(split[2]);
+                                            var tVal = new Vec3Value(vec);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                case ValueType.LIST:
+                                    {
+                                        List<int> idList = new List<int>();
+                                        if (cell.IsEmpty())
+                                        {
+                                            var tVal = new ListValue(idList);
+                                            dataRow.Add(tVal);
+                                        }
+                                        else
+                                        {
+                                            var val = cell.GetValue<string>();
+                                            var split = val.Split(',');
+                                            
+                                            foreach (var s in split)
+                                                idList.Add(int.Parse(s));
+
+                                            var tVal = new ListValue(idList);
+                                            dataRow.Add(tVal);
+                                        }
+                                    }
+                                    break;
+                                default:
+                                    {
+                                        Console.WriteLine($"[Error] No Match Type : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                        readError = true;
+                                    }
+                                    break;
+                            }
+                        }
+                        catch(InvalidCastException e)
+                        {
+                            Console.WriteLine($"[Error] Invalid type : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                            readError = true;
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine($"[Error] Error Value : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                            readError = true;
+                        }
                     }
 
-                    break;
+                    rowData.AddData(id, dataRow);
                 }
+
+                if (readError)
+                    return false;
+
+                while (false == rowDatas.TryAdd(rowData.SheetName, rowData))
+                {
+                    if (true == rowDatas.TryGetValue(rowData.SheetName, out var outData))
+                        outData.AddData(rowData);
+                }
+
+                Console.WriteLine($"{rowData.MakeJson()}");
             }
 
             return true;

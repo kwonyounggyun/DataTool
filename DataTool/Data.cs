@@ -1,9 +1,14 @@
-﻿using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
+﻿using DocumentFormat.OpenXml.EMMA;
+using DocumentFormat.OpenXml.Office.PowerPoint.Y2021.M06.Main;
+using DocumentFormat.OpenXml.Office2010.Excel;
+using DocumentFormat.OpenXml.Spreadsheet;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Dynamic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -52,10 +57,7 @@ namespace DataTool
     {
         public bool Validate(string value)
         {
-            if (value.Length <= 0)
-                return true;
-
-            return value.Contains(":");
+            return true;
         }
     }
 
@@ -72,29 +74,60 @@ namespace DataTool
     {
         public int Index { get; set; } = 0;
         public string Name { get; set; } = "";
-        public int TypeId { get; set; } = 0;
+        public ValueType TypeId { get; set; } = 0;
         public bool Server { get; set; } = false;
         public bool Client { get; set; } = false;
         public string RefSheetName { get; set; } = "";
-        public string RefFieldName { get; set; } = "";
         public bool Required { get; set; } = false;
+    }
+
+    public enum ValueType
+    {
+        NONE,
+        INT,
+        FLOAT,
+        STRING,
+        BOOL,
+        DATETIME,
+        VEC3,
+        LIST,
+    }
+    public struct SchemaColumn
+    {
+        public string Name;
+        public int ColumnNum;
+        public IValidatable Validatable;
+    }
+
+    public struct DataColumn
+    {
+        public string Name;
+        public int ColumnNum;
+        public ValueType TypeId;
+        public bool required;
+    }
+
+    public struct Vec3
+    {
+        public float x, y, z;
     }
 
     class DataSchema
     {
-        public static Dictionary<string, int> TypeMap = new()
+        public DataSchema(string sheetName)
         {
-            { "int", 1 },
-            { "float", 2 },
-            { "string", 3 },
-            { "bool", 4 },
-            { "vector2", 5 },
-            { "vector3", 6 },
-            { "vector4", 7 },
-            { "color", 8 },
-            { "datetime", 9 },
-            { "list", 10 },
-            { "dictionary", 11 }
+            SheetName = sheetName;
+        }
+
+        public static Dictionary<string, ValueType> TypeMap = new()
+        {
+            { "int", ValueType.INT },
+            { "float", ValueType.FLOAT },
+            { "string", ValueType.STRING },
+            { "bool", ValueType.BOOL },
+            { "datetime", ValueType.DATETIME },
+            { "vec3", ValueType.VEC3 },
+            { "list", ValueType.LIST },
         };
 
         public static Dictionary<string, IValidatable> SchemaHeaderMap = new()
@@ -110,23 +143,77 @@ namespace DataTool
 
         public bool AddFieldInfo(FieldInfo info)
         {
-            if (SchemaInfo[info.Name] != null)
+            FieldInfo? findInfo;
+            if (true == SchemaInfo.TryGetValue(info.Name, out findInfo))
                 return false;
 
             SchemaInfo.Add(info.Name, info);
             return true;
         }
 
-        public FieldInfo GetFieldInfo(string name)
+        public FieldInfo? GetFieldInfo(string name)
         {
-            return SchemaInfo[name];
+            FieldInfo? findInfo;
+            SchemaInfo.TryGetValue(name, out findInfo);
+
+            return findInfo;
         }
 
+        public string SheetName { get; private set; }
         private Dictionary<string, FieldInfo> SchemaInfo = new Dictionary<string, FieldInfo>();
     }
 
-    class IValue
+    public class RowData
     {
-        
+        public RowData(string sheetName, List<DataColumn> header)
+        {
+            SheetName = sheetName;
+            _header = header;
+        }
+
+        public bool AddData(int id, List<IValue> rowValue)
+        {
+            return _data.TryAdd(id, rowValue);
+        }
+        public bool AddData(RowData data)
+        {
+            foreach (var pair in data._data)
+            {
+                if (false == AddData(pair.Key, pair.Value))
+                    return false;
+            }
+
+            return true;
+        }
+
+        public bool ContainsKey(int id)
+        {
+            return _data.ContainsKey(id);
+        }
+
+        public string MakeJson()
+        {
+            JObject jobj = new JObject();
+            foreach(var pair in _data)
+            {
+                var rowObj = new JObject();
+                var value = pair.Value;
+                for (int i = 0; i < _header.Count; i++)
+                {
+                    var key = _header[i].Name;
+                    value[i].GetJson(ref key, ref rowObj);
+                }
+                jobj.Add(new JProperty(Convert.ToString(pair.Key), rowObj));
+            }
+
+            var dataObject = new JObject();
+            dataObject.Add(new JProperty(SheetName, jobj));
+
+            return dataObject.ToString();
+        }
+
+        public string SheetName { get; private set; }
+        private List<DataColumn> _header = new List<DataColumn>();
+        private Dictionary<int, List<IValue>> _data = new Dictionary<int, List<IValue>>();
     }
 }
