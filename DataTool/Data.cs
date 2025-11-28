@@ -72,7 +72,7 @@ namespace DataTool
         }
     }
 
-    class FieldInfo
+    public class FieldInfo
     {
         public int Index { get; set; } = 0;
         public string Name { get; set; } = "";
@@ -81,67 +81,6 @@ namespace DataTool
         public bool Client { get; set; } = false;
         public string RefSheetName { get; set; } = "";
         public bool Required { get; set; } = false;
-
-        public void GetCPP(ref StringBuilder sb, string indent)
-        {
-            var newName = char.ToUpper(Name[0]) + Name.Substring(1);
-            switch (TypeId)
-            {
-                case ValueType.INT:
-                    sb.Append($"{indent}int {newName} = 0;\r\n");
-                    break;
-                case ValueType.FLOAT:
-                    sb.Append($"{indent}float {newName} = 0.0f;\r\n");
-                    break;
-                case ValueType.STRING:
-                    sb.Append($"{indent}string {newName} = \"\";\r\n");
-                    break;
-                case ValueType.BOOL:
-                    sb.Append($"{indent}bool {newName} = false;\r\n");
-                    break;
-                case ValueType.DATETIME:
-                    sb.Append($"{indent}std::tm {newName};\r\n");
-                    break;
-                case ValueType.VEC3:
-                    sb.Append($"{indent}Vec3 {newName};\r\n");
-                    break;
-                case ValueType.LIST:
-                    sb.Append($"{indent}std::map<int, const {RefSheetName}*> {newName};\r\n");
-                    break;
-            }
-        }
-
-        public void GetJsonParseCPP(ref StringBuilder sb, string indent)
-        {
-            var newName = char.ToUpper(Name[0]) + Name.Substring(1);
-            switch (TypeId)
-            {
-                case ValueType.INT:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<int>();\r\n");
-                    break;
-                case ValueType.FLOAT:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<float>();\r\n");
-                    break;
-                case ValueType.STRING:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<std::string>();;\r\n");
-                    break;
-                case ValueType.BOOL:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
-                    break;
-                case ValueType.DATETIME:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
-                    break;
-                case ValueType.VEC3:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{Name}\").get<bool>();\r\n");
-                    break;
-                case ValueType.LIST:
-                    sb.Append($"{indent}{{\r\n");
-                    sb.Append($"{indent + "\t"}auto ids = j.at(\"{Name}\").get<std::list<int>>();\r\n");
-                    sb.Append($"{indent + "\t"}for(auto id : ids) dataObj.{newName}[id] = nullptr;\r\n");
-                    sb.Append($"{indent}}}\r\n");
-                    break;
-            }
-        }
     }
 
     public enum ValueType
@@ -153,6 +92,7 @@ namespace DataTool
         BOOL,
         DATETIME,
         VEC3,
+        VEC2,
         LIST,
     }
     public struct SchemaColumn
@@ -174,8 +114,12 @@ namespace DataTool
     {
         public float x, y, z;
     }
+    public struct Vec2
+    {
+        public float x, y;
+    }
 
-    class DataSchema
+    public class DataSchema
     {
         public DataSchema(string sheetName)
         {
@@ -190,6 +134,7 @@ namespace DataTool
             { "bool", ValueType.BOOL },
             { "datetime", ValueType.DATETIME },
             { "vec3", ValueType.VEC3 },
+            { "vec2", ValueType.VEC2 },
             { "list", ValueType.LIST },
         };
 
@@ -207,85 +152,23 @@ namespace DataTool
         public bool AddFieldInfo(FieldInfo info)
         {
             FieldInfo? findInfo;
-            if (true == SchemaInfo.TryGetValue(info.Name, out findInfo))
+            if (true == FieldInfos.TryGetValue(info.Name, out findInfo))
                 return false;
 
-            SchemaInfo.Add(info.Name, info);
+            FieldInfos.Add(info.Name, info);
             return true;
         }
 
         public FieldInfo? GetFieldInfo(string name)
         {
             FieldInfo? findInfo;
-            SchemaInfo.TryGetValue(name, out findInfo);
+            FieldInfos.TryGetValue(name, out findInfo);
 
             return findInfo;
         }
 
-        public void GetCPP(ref StringBuilder sb, int indentCount, bool server = false)
-        {
-            string indent = "";
-            for (int i = 0; i < indentCount; i++)
-                indent += "\t";
-
-            sb.Append($"{indent}class {SheetName}\r\n");
-            sb.Append($"{indent}{{\r\n");
-            sb.Append($"{indent}public:\r\n");
-            foreach (var pair in SchemaInfo)
-            {
-                var field = pair.Value;
-                if (server)
-                {
-                    if (field.Server == false)
-                        continue;
-
-                    field.GetCPP(ref sb, indent + "\t");
-                }
-                else
-                {
-                    if (field.Client == false)
-                        continue;
-
-                    field.GetCPP(ref sb, indent + "\t");
-                }
-            }
-
-            sb.Append($"{indent}}};\r\n\r\n");
-        }
-
-        public void GetJsonParseCPP(ref StringBuilder jsonParser, int indentCount, bool server = false)
-        {
-            string indent = "";
-            for (int i = 0; i < indentCount; i++)
-                indent += "\t";
-
-            jsonParser.Append($"{indent}void from_json(const json& j, {SheetName}& dataObj)\r\n");
-            jsonParser.Append($"{indent}{{\r\n");
-
-            foreach (var pair in SchemaInfo)
-            {
-                var field = pair.Value;
-                if (server)
-                {
-                    if (field.Server == false)
-                        continue;
-
-                    field.GetJsonParseCPP(ref jsonParser, indent + "\t");
-                }
-                else
-                {
-                    if (field.Client == false)
-                        continue;
-
-                    field.GetJsonParseCPP(ref jsonParser, indent + "\t");
-                }
-            }
-
-            jsonParser.Append($"{indent }}}\r\n");
-        }
-
         public string SheetName { get; private set; }
-        private Dictionary<string, FieldInfo> SchemaInfo = new Dictionary<string, FieldInfo>();
+        public Dictionary<string, FieldInfo> FieldInfos = new Dictionary<string, FieldInfo>();
     }
 
     public class RowData

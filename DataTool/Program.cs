@@ -20,3 +20,5 @@ Directory.CreateDirectory(serverPath);
 Directory.CreateDirectory(clientPath);
 ExcelReader.MakeCPP(ref serverPath, ref nameSpace, true);
 ExcelReader.MakeCPP(ref clientPath, ref nameSpace, false);
+ExcelReader.MakeCSharp(ref serverPath, ref nameSpace, true);
+ExcelReader.MakeCSharp(ref clientPath, ref nameSpace, false);

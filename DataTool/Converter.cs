@@ -52,6 +52,26 @@ namespace DataTool
         Vec3 _value;
     }
 
+    public class Vec2Value : IValue
+    {
+        public Vec2Value(Vec2 value)
+        {
+            _value = value;
+        }
+
+        public bool GetJson(ref string key, ref JObject obj)
+        {
+
+            JObject vec = new JObject();
+            vec.Add(new JProperty("x", _value.x));
+            vec.Add(new JProperty("y", _value.y));
+            obj.Add(new JProperty(key, vec));
+            return true;
+        }
+
+        Vec2 _value;
+    }
+
     public class ListValue : IValue
     {
         public ListValue(List<int> value) { _value = value; }
