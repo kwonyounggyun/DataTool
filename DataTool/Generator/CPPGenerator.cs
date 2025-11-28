@@ -1,5 +1,6 @@
 ﻿using ClosedXML.Excel;
 using DocumentFormat.OpenXml.Drawing.Charts;
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.VisualBasic.FileIO;
@@ -17,8 +18,15 @@ namespace DataTool.Generator
         public override void Generate(ref string outFilePath, ref string usingNamespace, ref ConcurrentDictionary<string, DataSchema> schemaInfos, bool server)
         {
             StringBuilder mainHeader = new StringBuilder();
+            mainHeader.Append("#pragma once\r\n");
             mainHeader.Append("#include <map>\r\n");
-            mainHeader.Append("#include <list>\r\n\r\n");
+            mainHeader.Append("#include <list>\r\n");
+            mainHeader.Append("#include <string>\r\n");
+            mainHeader.Append("#include <fstream>\r\n");
+            mainHeader.Append("#include <sstream>\r\n");
+            mainHeader.Append("#include <nlohmann/json.hpp>\r\n");
+            mainHeader.Append("using json = nlohmann::json;\r\n\r\n");
+
             mainHeader.Append($"namespace {usingNamespace}\r\n");
             mainHeader.Append("{\r\n");
             MakeDefaultClass(ref mainHeader, 1);
@@ -27,11 +35,13 @@ namespace DataTool.Generator
             foreach (var pair in schemaInfos)
             {
                 StringBuilder sb = new StringBuilder();
+                sb.Append("#pragma once\r\n\r\n");
                 sb.Append($"namespace {usingNamespace}\r\n");
                 sb.Append("{\r\n");
                 var schema = pair.Value;
                 GenerateClass(ref sb, 1, ref schema, server);
                 GenerateJsonParser(ref sb, 1, ref schema, server);
+                GenerateLoadFunc(ref sb, "\t", ref schema);
                 sb.Append("}\r\n");
                 Console.WriteLine($"{sb.ToString()}");
 
@@ -68,36 +78,59 @@ namespace DataTool.Generator
         {
             sb.Append($"{indent}struct Vec3\r\n");
             sb.Append($"{indent}{{\r\n");
-            sb.Append($"{indent + "\t"}float x\r\n");
-            sb.Append($"{indent + "\t"}float y\r\n");
-            sb.Append($"{indent + "\t"}float z\r\n");
+            sb.Append($"{indent + "\t"}float x;\r\n");
+            sb.Append($"{indent + "\t"}float y;\r\n");
+            sb.Append($"{indent + "\t"}float z;\r\n");
             sb.Append($"{indent}}};\r\n");
             sb.Append($"\r\n");
-            sb.Append($"{indent}void from_json(const json& j, Vec3& dataObj\r\n");
+            sb.Append($"{indent}void from_json(const json& j, Vec3& dataObj)\r\n");
             sb.Append($"{indent}{{\r\n");
             sb.Append($"{indent + "\t"}dataObj.x = j.at(\"x\").get<float>();\r\n");
             sb.Append($"{indent + "\t"}dataObj.y = j.at(\"y\").get<float>();\r\n");
             sb.Append($"{indent + "\t"}dataObj.z = j.at(\"z\").get<float>();\r\n");
             sb.Append($"{indent}}}\r\n");
             sb.Append($"\r\n");
+
             sb.Append($"{indent}struct Vec2\r\n");
             sb.Append($"{indent}{{\r\n");
-            sb.Append($"{indent + "\t"}float x\r\n");
-            sb.Append($"{indent + "\t"}float y\r\n");
+            sb.Append($"{indent + "\t"}float x;\r\n");
+            sb.Append($"{indent + "\t"}float y;\r\n");
             sb.Append($"{indent}}};\r\n");
             sb.Append($"\r\n");
-            sb.Append($"{indent}void from_json(const json& j, Vec3& dataObj\r\n");
+            sb.Append($"{indent}void from_json(const json& j, Vec2& dataObj)\r\n");
             sb.Append($"{indent}{{\r\n");
             sb.Append($"{indent + "\t"}dataObj.x = j.at(\"x\").get<float>();\r\n");
             sb.Append($"{indent + "\t"}dataObj.y = j.at(\"y\").get<float>();\r\n");
             sb.Append($"{indent}}}\r\n");
             sb.Append($"\r\n");
         }
+
+        protected void GenerateLoadFunc(ref StringBuilder sb, string indent, ref DataSchema schemaInfo)
+        {
+            sb.Append($"{indent}void {schemaInfo.SheetName}::Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}>&data)\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent + "\t"}std::ifstream inputFile(jsonDir +\"/{schemaInfo.SheetName}.json\");\r\n");
+            sb.Append($"{indent + "\t"}if (inputFile.is_open())\r\n");
+            sb.Append($"{indent + "\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t"}std::stringstream buffer;\r\n");
+            sb.Append($"{indent + "\t\t"}buffer << inputFile.rdbuf();\r\n");
+            sb.Append($"{indent + "\t\t"}json j = json::parse(buffer.str());\r\n");
+            sb.Append($"{indent + "\t\t"}for (const auto& elem : j)\r\n");
+            sb.Append($"{indent + "\t\t"}{{\r\n");
+            sb.Append($"{indent + "\t\t\t"}auto item = elem.get<{schemaInfo.SheetName}>();\r\n");
+            sb.Append($"{indent + "\t\t\t"}data.emplace(item.Id, std::move(item));\r\n");
+            sb.Append($"{indent + "\t\t"}}}\r\n");
+            sb.Append($"{indent + "\t"}}}\r\n");
+            sb.Append($"{indent}}}\r\n");
+            sb.Append($"\r\n");
+        }
+
         protected override void GenerateClass(ref StringBuilder sb, ref string indent, ref DataSchema schemaInfo, bool server = false)
         {
             sb.Append($"{indent}class {schemaInfo.SheetName}\r\n");
             sb.Append($"{indent}{{\r\n");
             sb.Append($"{indent}public:\r\n");
+            sb.Append($"{indent + "\t"}static void Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}>&data);\r\n");
 
             var fieldIndent = indent + "\t";
             foreach (var pair in schemaInfo.FieldInfos)
@@ -140,7 +173,7 @@ namespace DataTool.Generator
                     sb.Append($"{indent}float {newName} = 0.0f;\r\n");
                     break;
                 case ValueType.STRING:
-                    sb.Append($"{indent}string {newName} = \"\";\r\n");
+                    sb.Append($"{indent}std::string {newName} = \"\";\r\n");
                     break;
                 case ValueType.BOOL:
                     sb.Append($"{indent}bool {newName} = false;\r\n");
@@ -185,6 +218,7 @@ namespace DataTool.Generator
             }
 
             sb.Append($"{indent}}}\r\n");
+            sb.Append($"\r\n");
         }
         protected override void GetParseJsonField(ref StringBuilder sb, ref string indent, ref FieldInfo field) 
         {
@@ -210,7 +244,10 @@ namespace DataTool.Generator
                     sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();\r\n");
                     break;
                 case ValueType.VEC3:
-                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();\r\n");
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<Vec3>();\r\n");
+                    break;
+                case ValueType.VEC2:
+                    sb.Append($"{indent}dataObj.{newName} = j.at(\"{field.Name}\").get<Vec2>();\r\n");
                     break;
                 case ValueType.LIST:
                     sb.Append($"{indent}{{\r\n");
