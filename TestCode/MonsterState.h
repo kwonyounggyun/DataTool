@@ -2,12 +2,13 @@
 
 namespace GameData
 {
+	class State;
 	class MonsterState
 	{
 	public:
-		static void Load(std::string jsonDir, std::map<int, MonsterState>&data);
+		static void Load(std::string jsonDir, std::map<int, MonsterState*>&data);
 		int Id = 0;
-		std::map<int, const State*> Params;
+		std::map<int, State*> Params;
 	};
 
 	void from_json(const json& j, MonsterState& dataObj)
@@ -19,7 +20,7 @@ namespace GameData
 		}
 	}
 
-	void MonsterState::Load(std::string jsonDir, std::map<int, MonsterState>&data)
+	void MonsterState::Load(std::string jsonDir, std::map<int, MonsterState*>&data)
 	{
 		std::ifstream inputFile(jsonDir +"/MonsterState.json");
 		if (inputFile.is_open())
@@ -30,7 +31,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<MonsterState>();
-				data.emplace(item.Id, std::move(item));
+				data.emplace(item.Id, new MonsterState(item));
 			}
 		}
 	}

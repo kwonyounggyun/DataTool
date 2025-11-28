@@ -2,14 +2,16 @@
 
 namespace GameData
 {
+	class State;
 	class SpawnData
 	{
 	public:
-		static void Load(std::string jsonDir, std::map<int, SpawnData>&data);
+		static void Load(std::string jsonDir, std::map<int, SpawnData*>&data);
 		int Id = 0;
 		std::string Name = "";
 		Vec3 Pos;
-		int State = 0;
+		int _State = 0;
+		State* State = nullptr;
 	};
 
 	void from_json(const json& j, SpawnData& dataObj)
@@ -17,10 +19,10 @@ namespace GameData
 		dataObj.Id = j.at("id").get<int>();
 		dataObj.Name = j.at("name").get<std::string>();;
 		dataObj.Pos = j.at("pos").get<Vec3>();
-		dataObj.State = j.at("state").get<int>();
+		dataObj._State = j.at("state").get<int>();
 	}
 
-	void SpawnData::Load(std::string jsonDir, std::map<int, SpawnData>&data)
+	void SpawnData::Load(std::string jsonDir, std::map<int, SpawnData*>&data)
 	{
 		std::ifstream inputFile(jsonDir +"/SpawnData.json");
 		if (inputFile.is_open())
@@ -31,7 +33,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<SpawnData>();
-				data.emplace(item.Id, std::move(item));
+				data.emplace(item.Id, new SpawnData(item));
 			}
 		}
 	}

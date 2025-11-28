@@ -61,6 +61,11 @@ namespace DataTool.Generator
                 mainHeader.Append($"#include \"{outHeader}\"\r\n");
             }
 
+            mainHeader.Append($"namespace {usingNamespace}\r\n");
+            mainHeader.Append("{\r\n");
+            GenerateStaticDataClass(ref mainHeader, "\t", ref usingNamespace, ref schemaInfos, server);
+            mainHeader.Append("}\r\n");
+
             var header = usingNamespace + ".h";
             try
             {
@@ -74,6 +79,98 @@ namespace DataTool.Generator
                 Console.WriteLine($"{header} 파일 쓰기 오류: {ex.Message}");
             }
         }
+
+        protected void GenerateStaticDataClass(ref StringBuilder sb, string indent, ref string usingNamespace, ref ConcurrentDictionary<string, DataSchema> schemaInfos, bool server)
+        {
+            sb.Append($"{indent}class StaticData\r\n");
+            sb.Append($"{indent}{{\r\n");
+            sb.Append($"{indent}public:\r\n");
+            sb.Append($"{indent + "\t"}static void Load(std::string jsonDir)\r\n");
+            sb.Append($"{indent + "\t"}{{\r\n");
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                sb.Append($"{indent + "\t\t"}std::map<int, {usingNamespace}::{schema.SheetName}*> _{schema.SheetName};\r\n");
+            }
+            sb.Append($"\r\n");
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                sb.Append($"{indent + "\t\t"}{schema.SheetName}::Load(jsonDir, _{schema.SheetName});\r\n");
+            }
+
+            sb.Append($"\r\n");
+            sb.Append($"{indent + "\t\t"}std::list<std::function<void()>> tasks;\r\n");
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                foreach(var pair2 in schema.FieldInfos)
+                {
+                    var field = pair2.Value;
+                    if (field.RefSheetName.Length <= 0)
+                        continue;
+
+                    if(server)
+                    {
+                        if (false == field.Server)
+                            continue;
+                    }
+                    else
+                    {
+                        if (false == field.Client)
+                            continue;
+                    }
+
+                    if (field.TypeId == ValueType.INT)
+                    {
+                        var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+                        sb.Append(
+                            $"{indent + "\t\t"}tasks.push_back([&](){{\r\n" +
+                            $"{indent + "\t\t\t"}for (auto& [key, value] : _{schema.SheetName})\r\n" +
+                            $"{indent + "\t\t\t\t"}value->{newName} = _{field.RefSheetName}[value->_{newName}];\r\n" +
+                            $"{indent + "\t\t"}}});\r\n");
+                    }
+                    else if (field.TypeId == ValueType.LIST)
+                    {
+                        var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+                        sb.Append(
+                            $"{indent + "\t\t"}tasks.push_back([&](){{\r\n" +
+                            $"{indent + "\t\t\t"}for (auto& [key, value] : _{schema.SheetName})\r\n" +
+                            $"{indent + "\t\t\t"}{{\r\n" +
+                            $"{indent + "\t\t\t\t"}for (auto& [key2, value2] : value->{newName})\r\n" +
+                            $"{indent + "\t\t\t\t\t"}value2 = _{field.RefSheetName}[key2];\r\n" +
+                            $"{indent + "\t\t\t"}}}\r\n" +
+                            $"{indent + "\t\t"}}});\r\n");
+                    }
+                }
+            }
+            sb.Append($"\r\n");
+            sb.Append($"{indent + "\t\t"}while(!tasks.empty()) {{ auto task = tasks.front(); tasks.pop_front(); task(); }}\r\n");
+            sb.Append($"\r\n");
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                sb.Append($"{indent + "\t\t"}{schema.SheetName}.insert(_{schema.SheetName}.begin(), _{schema.SheetName}.end());\r\n");
+            }
+
+            sb.Append($"{indent + "\t"}}}\r\n");
+
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                sb.Append($"{indent + "\t"}static std::map<int, const {usingNamespace}::{schema.SheetName}*> {schema.SheetName};\r\n");
+            }
+            sb.Append($"{indent}}};\r\n");
+
+            foreach (var pair in schemaInfos)
+            {
+                var schema = pair.Value;
+                sb.Append($"{indent}std::map<int, const {usingNamespace}::{schema.SheetName}*> StaticData::{schema.SheetName};\r\n");
+            }
+
+            sb.Append($"{indent}\r\n");
+        }
+
         protected override void MakeDefaultClass(ref StringBuilder sb, ref string indent)
         {
             sb.Append($"{indent}struct Vec3\r\n");
@@ -107,7 +204,7 @@ namespace DataTool.Generator
 
         protected void GenerateLoadFunc(ref StringBuilder sb, string indent, ref DataSchema schemaInfo)
         {
-            sb.Append($"{indent}void {schemaInfo.SheetName}::Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}>&data)\r\n");
+            sb.Append($"{indent}void {schemaInfo.SheetName}::Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}*>&data)\r\n");
             sb.Append($"{indent}{{\r\n");
             sb.Append($"{indent + "\t"}std::ifstream inputFile(jsonDir +\"/{schemaInfo.SheetName}.json\");\r\n");
             sb.Append($"{indent + "\t"}if (inputFile.is_open())\r\n");
@@ -118,7 +215,7 @@ namespace DataTool.Generator
             sb.Append($"{indent + "\t\t"}for (const auto& elem : j)\r\n");
             sb.Append($"{indent + "\t\t"}{{\r\n");
             sb.Append($"{indent + "\t\t\t"}auto item = elem.get<{schemaInfo.SheetName}>();\r\n");
-            sb.Append($"{indent + "\t\t\t"}data.emplace(item.Id, std::move(item));\r\n");
+            sb.Append($"{indent + "\t\t\t"}data.emplace(item.Id, new {schemaInfo.SheetName}(item));\r\n");
             sb.Append($"{indent + "\t\t"}}}\r\n");
             sb.Append($"{indent + "\t"}}}\r\n");
             sb.Append($"{indent}}}\r\n");
@@ -127,10 +224,33 @@ namespace DataTool.Generator
 
         protected override void GenerateClass(ref StringBuilder sb, ref string indent, ref DataSchema schemaInfo, bool server = false)
         {
+            // 전방 선언
+            var set = new HashSet<string>();
+            foreach (var pair in schemaInfo.FieldInfos)
+            {
+                var field = pair.Value;
+                if (server)
+                {
+                    if (field.Server == false)
+                        continue;
+                }
+                else
+                {
+                    if (field.Client == false)
+                        continue;
+                }
+
+                if (field.RefSheetName.Length > 0)
+                    set.Add(field.RefSheetName);
+            }
+
+            foreach(var refName in set)
+                sb.Append($"{indent}class {refName};\r\n");
+
             sb.Append($"{indent}class {schemaInfo.SheetName}\r\n");
             sb.Append($"{indent}{{\r\n");
             sb.Append($"{indent}public:\r\n");
-            sb.Append($"{indent + "\t"}static void Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}>&data);\r\n");
+            sb.Append($"{indent + "\t"}static void Load(std::string jsonDir, std::map<int, {schemaInfo.SheetName}*>&data);\r\n");
 
             var fieldIndent = indent + "\t";
             foreach (var pair in schemaInfo.FieldInfos)
@@ -164,7 +284,7 @@ namespace DataTool.Generator
                     if(field.RefSheetName.Length > 0)
                     {
                         sb.Append($"{indent}int _{newName} = 0;\r\n");
-                        sb.Append($"{indent}const {field.RefSheetName}* {newName} = nullptr;\r\n");
+                        sb.Append($"{indent}{field.RefSheetName}* {newName} = nullptr;\r\n");
                     }
                     else
                         sb.Append($"{indent}int {newName} = 0;\r\n");
@@ -188,7 +308,7 @@ namespace DataTool.Generator
                     sb.Append($"{indent}Vec2 {newName};\r\n");
                     break;
                 case ValueType.LIST:
-                    sb.Append($"{indent}std::map<int, const {field.RefSheetName}*> {newName};\r\n");
+                    sb.Append($"{indent}std::map<int, {field.RefSheetName}*> {newName};\r\n");
                     break;
             }
         }

@@ -5,7 +5,7 @@ namespace GameData
 	class State
 	{
 	public:
-		static void Load(std::string jsonDir, std::map<int, State>&data);
+		static void Load(std::string jsonDir, std::map<int, State*>&data);
 		int Id = 0;
 		int Type = 0;
 		int Value = 0;
@@ -18,7 +18,7 @@ namespace GameData
 		dataObj.Value = j.at("value").get<int>();
 	}
 
-	void State::Load(std::string jsonDir, std::map<int, State>&data)
+	void State::Load(std::string jsonDir, std::map<int, State*>&data)
 	{
 		std::ifstream inputFile(jsonDir +"/State.json");
 		if (inputFile.is_open())
@@ -29,7 +29,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<State>();
-				data.emplace(item.Id, std::move(item));
+				data.emplace(item.Id, new State(item));
 			}
 		}
 	}

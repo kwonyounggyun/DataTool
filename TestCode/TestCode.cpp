@@ -13,8 +13,8 @@ int main()
 {
     std::cout << "Hello World!\n";
 
-    std::map<int, GameData::MonsterState> data;
-    GameData::MonsterState::Load(".", data);
+    std::list<int> test;
+    StaticData::Load(".");
 
 
     std::cout << "Hello World!\n";
