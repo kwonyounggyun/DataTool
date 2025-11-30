@@ -1,5 +1,4 @@
 #pragma once
-
 namespace GameData
 {
 	class State;
@@ -17,7 +16,7 @@ namespace GameData
 	void from_json(const json& j, SpawnData& dataObj)
 	{
 		dataObj.Id = j.at("id").get<int>();
-		dataObj.Name = j.at("name").get<std::string>();;
+		dataObj.Name = j.at("name").get<std::string>();
 		dataObj.Pos = j.at("pos").get<Vec3>();
 		dataObj._State = j.at("state").get<int>();
 	}
@@ -32,7 +31,7 @@ namespace GameData
 			json j = json::parse(buffer.str());
 			for (const auto& elem : j)
 			{
-				auto item = elem.get<SpawnData>();
+				auto item = elem.get <SpawnData>();
 				data.emplace(item.Id, new SpawnData(item));
 			}
 		}

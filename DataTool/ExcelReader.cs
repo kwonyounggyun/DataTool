@@ -463,12 +463,12 @@ namespace DataTool
         public static void MakeCPP(string outFilePath, string usingNamespace, bool server = false)
         {
             var generator = new CPPGenerator();
-            generator.Generate(ref outFilePath, ref usingNamespace, ref schema, server);
+            generator.Generate(outFilePath, usingNamespace, schema, server);
         }
         public static void MakeCSharp(string outFilePath, string usingNamespace, bool server = false)
         {
             var generator = new CSharpGenerator();
-            generator.Generate(ref outFilePath, ref usingNamespace, ref schema, server);
+            generator.Generate(outFilePath, usingNamespace, schema, server);
         }
         public static void MakeJson(string outDirPath, bool server = false)
         {

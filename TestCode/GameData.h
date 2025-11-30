@@ -6,11 +6,11 @@
 #include <sstream>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
-
 namespace GameData
 {
 	struct Vec3
 	{
+	public:
 		float x;
 		float y;
 		float z;
@@ -25,6 +25,7 @@ namespace GameData
 
 	struct Vec2
 	{
+	public:
 		float x;
 		float y;
 	};
@@ -44,16 +45,14 @@ namespace GameData
 	class StaticData
 	{
 	public:
-		static void Load(std::string jsonDir)
+		void Load(std::string jsonDir)
 		{
-			std::map<int, GameData::SpawnData*> _SpawnData;
-			std::map<int, GameData::State*> _State;
-			std::map<int, GameData::MonsterState*> _MonsterState;
-
+			std::map <int, GameData::SpawnData*> _SpawnData;
+			std::map <int, GameData::State*> _State;
+			std::map <int, GameData::MonsterState*> _MonsterState;
 			SpawnData::Load(jsonDir, _SpawnData);
 			State::Load(jsonDir, _State);
 			MonsterState::Load(jsonDir, _MonsterState);
-
 			std::list<std::function<void()>> tasks;
 			tasks.push_back([&](){
 				for (auto& [key, value] : _SpawnData)
@@ -65,20 +64,17 @@ namespace GameData
 					for (auto& [key2, value2] : value->Params)
 						value2 = _State[key2];
 				}
+
 			});
-
 			while(!tasks.empty()) { auto task = tasks.front(); tasks.pop_front(); task(); }
-
 			SpawnData.insert(_SpawnData.begin(), _SpawnData.end());
 			State.insert(_State.begin(), _State.end());
 			MonsterState.insert(_MonsterState.begin(), _MonsterState.end());
 		}
-		static std::map<int, const GameData::SpawnData*> SpawnData;
-		static std::map<int, const GameData::State*> State;
-		static std::map<int, const GameData::MonsterState*> MonsterState;
+
+		std::map<int, const GameData::SpawnData*> SpawnData;
+		std::map<int, const GameData::State*> State;
+		std::map<int, const GameData::MonsterState*> MonsterState;
 	};
-	std::map<int, const GameData::SpawnData*> StaticData::SpawnData;
-	std::map<int, const GameData::State*> StaticData::State;
-	std::map<int, const GameData::MonsterState*> StaticData::MonsterState;
-	
+
 }

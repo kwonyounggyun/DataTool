@@ -7,36 +7,62 @@ using System.Threading.Tasks;
 
 namespace DataTool.Generator
 {
-    public abstract class CodeGenerator
+    public class CodeBlock
     {
-        public abstract void Generate(ref string outFilePath, ref string usingNamespace, ref ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false);
-        protected abstract void MakeDefaultClass(ref StringBuilder sb, ref string indent);
-        protected abstract void GenerateClass(ref StringBuilder sb, ref string indent, ref DataSchema schemaInfo, bool server = false);
-        protected abstract void GetField(ref StringBuilder sb, ref string indent, ref FieldInfo field);
-        protected abstract void GenerateJsonParser(ref StringBuilder sb, ref string indent, ref DataSchema schemaInfo, bool server = false);
-        protected abstract void GetParseJsonField(ref StringBuilder sb, ref string indent, ref FieldInfo field);
-        protected void MakeDefaultClass(ref StringBuilder sb, int indentCount)
+        public void AddPost(string line)
         {
-            var indent = MakeIndent(indentCount);
-            MakeDefaultClass(ref sb, ref indent);
+            _postRows.Add(line);
         }
-        protected void GenerateClass(ref StringBuilder sb, int indentCount, ref DataSchema schemaInfo, bool server = false)
+        public void AddBlock(CodeBlock block)
         {
-            var indent = MakeIndent(indentCount);
-            GenerateClass(ref sb, ref indent, ref schemaInfo, server);
+            _innerBlocks.Add(block);
         }
-        protected void GenerateJsonParser(ref StringBuilder sb, int indentCount, ref DataSchema schemaInfo, bool server = false)
+        public void AddBlock(List<CodeBlock> blocks)
         {
-            var indent = MakeIndent(indentCount);
-            GenerateJsonParser(ref sb, ref indent, ref schemaInfo, server);
+            _innerBlocks.AddRange(blocks);
         }
-        protected static string MakeIndent(int indentCount)
+        public void AddRow(string line)
+        {
+            _innerRows.Add(line);
+        }
+        public void SetBlockName(string blockName) { _blockName = blockName; }
+        public virtual string MakeCode(int indentCount = 0)
         {
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < indentCount; i++)
-                sb.Append("\t");
+
+            foreach (var row in _postRows)
+                WriteLine(ref sb, indentCount, row);
+
+            if (_blockName != null)
+                WriteLine(ref sb, indentCount, _blockName);
+            WriteLine(ref sb, indentCount, "{");
+            foreach (var block in _innerBlocks)
+                WriteLine(ref sb, 0, block.MakeCode(indentCount + 1));
+
+            foreach (var row in _innerRows)
+                WriteLine(ref sb, indentCount + 1, row);
+            WriteLine(ref sb, indentCount, "}");
 
             return sb.ToString();
         }
+        protected void WriteLine(ref StringBuilder sb, int indentCount, string str)
+        {
+            sb.AppendLine(str.PadLeft(str.Length + indentCount, '\t'));
+        }
+
+        protected List<string> _postRows = new List<string>();
+        protected List<CodeBlock> _innerBlocks = new List<CodeBlock>();
+        protected List<string> _innerRows = new List<string>();
+        protected string? _blockName;
+    }
+
+    public abstract class CodeGenerator
+    {
+        public abstract void Generate(string outFilePath, string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false);
+        protected abstract List<CodeBlock> GetDefaultClasses();
+        protected abstract CodeBlock GenerateClass(ref DataSchema schemaInfo, bool server = false);
+        protected abstract void GetField(ref FieldInfo field, CodeBlock block);
+        protected abstract CodeBlock GenerateJsonParser(ref DataSchema schemaInfo, bool server = false);
+        protected abstract void GetParseJsonField(ref FieldInfo field, CodeBlock block);
     }
 }

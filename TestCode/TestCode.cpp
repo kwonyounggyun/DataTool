@@ -14,8 +14,8 @@ int main()
     std::cout << "Hello World!\n";
 
     std::list<int> test;
-    StaticData::Load(".");
-
+    StaticData data;
+    data.Load(".");
 
     std::cout << "Hello World!\n";
 }
