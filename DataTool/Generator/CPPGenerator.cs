@@ -52,6 +52,7 @@ namespace DataTool.Generator
             mainBlock.AddPost("#include <string>");
             mainBlock.AddPost("#include <fstream>");
             mainBlock.AddPost("#include <sstream>");
+            mainBlock.AddPost("#include <chrono>");
             mainBlock.AddPost("#include <nlohmann/json.hpp>");
             mainBlock.AddPost("using json = nlohmann::json;");
             mainBlock.AddBlock(GetDefaultClasses());
@@ -184,7 +185,7 @@ namespace DataTool.Generator
 
         protected override void GetField(ref FieldInfo field, CodeBlock block)
         {
-            var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+            var newName = GetName(field.Name);
             switch (field.TypeId)
             {
                 case ValueType.INT:
@@ -248,7 +249,7 @@ namespace DataTool.Generator
         }
         protected override void GetParseJsonField(ref FieldInfo field, CodeBlock block)
         {
-            var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+            var newName = GetName(field.Name);
             switch (field.TypeId)
             {
                 case ValueType.INT:
@@ -267,7 +268,11 @@ namespace DataTool.Generator
                     block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();");
                     break;
                 case ValueType.DATETIME:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();");
+                    block.AddRow("{");
+                    block.AddRow($"\tauto dateStr = j.at(\"{field.Name}\").get<std::string>();");
+                    block.AddRow($"\tdataObj.{newName} = std::get_time(&dateStr, \"%Y-%m-%d %H:%M:%S\");");
+                    block.AddRow($"\tdataObj.{newName}.tm_isdst = 0;");
+                    block.AddRow("}");
                     break;
                 case ValueType.VEC3:
                     block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<Vec3>();");
@@ -344,7 +349,7 @@ namespace DataTool.Generator
 
                     if (field.TypeId == ValueType.INT)
                     {
-                        var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+                        var newName = GetName(field.Name);
                         loadFunc.AddRow($"tasks.push_back([&](){{");
                         loadFunc.AddRow($"\tfor (auto& [key, value] : _{schema.SheetName})");
                         loadFunc.AddRow($"\t\tvalue->{newName} = _{field.RefSheetName}[value->_{newName}];");
@@ -352,7 +357,7 @@ namespace DataTool.Generator
                     }
                     else if (field.TypeId == ValueType.LIST)
                     {
-                        var newName = char.ToUpper(field.Name[0]) + field.Name.Substring(1);
+                        var newName = GetName(field.Name);
                         loadFunc.AddRow($"tasks.push_back([&](){{");
                         loadFunc.AddRow($"\tfor (auto& [key, value] : _{schema.SheetName})");
                         loadFunc.AddRow($"\t{{");

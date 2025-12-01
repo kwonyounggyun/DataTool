@@ -64,5 +64,10 @@ namespace DataTool.Generator
         protected abstract void GetField(ref FieldInfo field, CodeBlock block);
         protected abstract CodeBlock GenerateJsonParser(ref DataSchema schemaInfo, bool server = false);
         protected abstract void GetParseJsonField(ref FieldInfo field, CodeBlock block);
+
+        protected string GetName(string fieldName)
+        {
+            return char.ToUpper(fieldName[0]) + fieldName.Substring(1);
+        }
     }
 }

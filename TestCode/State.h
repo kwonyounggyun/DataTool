@@ -27,7 +27,7 @@ namespace GameData
 			json j = json::parse(buffer.str());
 			for (const auto& elem : j)
 			{
-				auto item = elem.get <State>();
+				auto item = elem.get<State>();
 				data.emplace(item.Id, new State(item));
 			}
 		}

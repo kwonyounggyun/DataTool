@@ -4,6 +4,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <chrono>
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 namespace GameData
@@ -40,6 +41,7 @@ namespace GameData
 #include "SpawnData.h"
 #include "State.h"
 #include "MonsterState.h"
+#include "Event.h"
 namespace GameData
 {
 	class StaticData
@@ -50,9 +52,11 @@ namespace GameData
 			std::map <int, GameData::SpawnData*> _SpawnData;
 			std::map <int, GameData::State*> _State;
 			std::map <int, GameData::MonsterState*> _MonsterState;
+			std::map <int, GameData::Event*> _Event;
 			SpawnData::Load(jsonDir, _SpawnData);
 			State::Load(jsonDir, _State);
 			MonsterState::Load(jsonDir, _MonsterState);
+			Event::Load(jsonDir, _Event);
 			std::list<std::function<void()>> tasks;
 			tasks.push_back([&](){
 				for (auto& [key, value] : _SpawnData)
@@ -70,11 +74,13 @@ namespace GameData
 			SpawnData.insert(_SpawnData.begin(), _SpawnData.end());
 			State.insert(_State.begin(), _State.end());
 			MonsterState.insert(_MonsterState.begin(), _MonsterState.end());
+			Event.insert(_Event.begin(), _Event.end());
 		}
 
 		std::map<int, const GameData::SpawnData*> SpawnData;
 		std::map<int, const GameData::State*> State;
 		std::map<int, const GameData::MonsterState*> MonsterState;
+		std::map<int, const GameData::Event*> Event;
 	};
 
 }
