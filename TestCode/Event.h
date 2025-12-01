@@ -15,7 +15,7 @@ namespace GameData
 		dataObj.Id = j.at("id").get<int>();
 		{
 			auto dateStr = j.at("time").get<std::string>();
-			std::stringstream ss(dateStr);  
+			std::stringstream ss(dateStr);
 			ss >> std::get_time(&dataObj.Time, "%Y-%m-%dT%H:%M:%S");
 			dataObj.Time.tm_isdst = 0;
 		}

@@ -270,7 +270,8 @@ namespace DataTool.Generator
                 case ValueType.DATETIME:
                     block.AddRow("{");
                     block.AddRow($"\tauto dateStr = j.at(\"{field.Name}\").get<std::string>();");
-                    block.AddRow($"\tdataObj.{newName} = std::get_time(&dateStr, \"%Y-%m-%d %H:%M:%S\");");
+                    block.AddRow($"\tstd::stringstream ss(dateStr);");
+                    block.AddRow($"\tss >> std::get_time(&dataObj.{newName}, \"%Y-%m-%dT%H:%M:%S\");");
                     block.AddRow($"\tdataObj.{newName}.tm_isdst = 0;");
                     block.AddRow("}");
                     break;
