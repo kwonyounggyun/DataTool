@@ -42,7 +42,7 @@ namespace DataTool.Generator
 
     public sealed class CPPGenerator : CodeGenerator
     {
-        public override void Generate(string outFilePath, string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false)
+        public override void Generate(string outFilePath, string usingNamespace, ConcurrentDataMap<DataSchema> schemaInfos, bool server = false)
         {
             var mainBlock = new CodeBlock();
             mainBlock.SetBlockName($"namespace {usingNamespace}");
@@ -66,7 +66,52 @@ namespace DataTool.Generator
                 classfile.AddPost("#pragma once");
                 classfile.SetBlockName($"namespace {usingNamespace}");
                 var schema = pair.Value;
-                classfile.AddBlock(GenerateClass(ref schema, server));
+                var classBlock = GenerateClass(ref schema, server);
+                foreach (var fieldPair in pair.Value.FieldInfos)
+                {
+                    var field = fieldPair.Value;
+                    if (server)
+                    {
+                        if (field.Server == false)
+                            continue;
+                    }
+                    else
+                    {
+                        if (field.Client == false)
+                            continue;
+                    }
+
+                    if (field.RefSheetName.Length > 0)
+                    {
+                        if (field.TypeId == ValueType.INT)
+                        {
+                            if (!field.Container)
+                            {
+                                var linkBlock = new CodeBlock();
+                                var newName = GetName(field.Name);
+                                linkBlock.SetBlockName($"static void Link{newName}(std::map<int, {usingNamespace}::{schema.SheetName}*>& map{schema.SheetName}, std::map<int, {usingNamespace}::{field.RefSheetName}*>& map{field.RefSheetName})");
+                                linkBlock.AddRow($"for (auto& [key, value] : map{schema.SheetName})");
+                                linkBlock.AddRow($"\tif (value->_{newName} != 0)");
+                                linkBlock.AddRow($"\t\tif (auto find = map{field.RefSheetName}.find(value->_{newName}); find != map{field.RefSheetName}.end())");
+                                linkBlock.AddRow($"\t\t\tvalue->{newName} = find->second;");
+                                classBlock.AddBlock(linkBlock);
+                            }
+                            else
+                            {
+                                var linkBlock = new CodeBlock();
+                                var newName = GetName(field.Name);
+                                linkBlock.SetBlockName($"static void Link{newName}(std::map<int, {usingNamespace}::{schema.SheetName}*>& map{schema.SheetName}, std::map<int, {usingNamespace}::{field.RefSheetName}*>& map{field.RefSheetName})");
+                                linkBlock.AddRow($"for (auto& [key, value] : map{schema.SheetName})");
+                                linkBlock.AddRow($"\tfor (auto& [key2, value2] : value->{newName})");
+                                linkBlock.AddRow($"\t\tif (auto find = map{field.RefSheetName}.find(key2); find != map{field.RefSheetName}.end())");
+                                linkBlock.AddRow($"\t\t\tvalue2 = find->second;");
+                                classBlock.AddBlock(linkBlock);
+                            }
+                        }
+                    }
+                }
+
+                classfile.AddBlock(classBlock);
                 classfile.AddBlock(GenerateJsonParser(ref schema, server));
                 classfile.AddBlock(GenerateLoadFunc(ref schema));
 
@@ -168,16 +213,14 @@ namespace DataTool.Generator
                 {
                     if (field.Server == false)
                         continue;
-
-                    GetField(ref field, classBlock);
                 }
                 else
                 {
                     if (field.Client == false)
                         continue;
-
-                    GetField(ref field, classBlock);
                 }
+
+                GetField(ref field, classBlock);
             }
 
             return classBlock;
@@ -186,38 +229,60 @@ namespace DataTool.Generator
         protected override void GetField(ref FieldInfo field, CodeBlock block)
         {
             var newName = GetName(field.Name);
-            switch (field.TypeId)
+
+            if (!field.Container)
             {
-                case ValueType.INT:
-                    if (field.RefSheetName.Length > 0)
-                    {
-                        block.AddRow($"int _{newName} = 0;");
-                        block.AddRow($"{field.RefSheetName}* {newName} = nullptr;");
-                    }
-                    else
-                        block.AddRow($"int {newName} = 0;");
-                    break;
-                case ValueType.FLOAT:
-                    block.AddRow($"float {newName} = 0.0f;");
-                    break;
-                case ValueType.STRING:
-                    block.AddRow($"std::string {newName} = \"\";");
-                    break;
-                case ValueType.BOOL:
-                    block.AddRow($"bool {newName} = false;");
-                    break;
-                case ValueType.DATETIME:
-                    block.AddRow($"std::tm {newName};");
-                    break;
-                case ValueType.VEC3:
-                    block.AddRow($"Vec3 {newName};");
-                    break;
-                case ValueType.VEC2:
-                    block.AddRow($"Vec2 {newName};");
-                    break;
-                case ValueType.LIST:
-                    block.AddRow($"std::map<int, {field.RefSheetName}*> {newName};");
-                    break;
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                        {
+                            block.AddRow($"int _{newName} = 0;");
+                            block.AddRow($"const {field.RefSheetName}* {newName} = nullptr;");
+                        }
+                        else
+                            block.AddRow($"int {newName} = 0;");
+                        break;
+                    case ValueType.FLOAT:
+                        block.AddRow($"float {newName} = 0.0f;");
+                        break;
+                    case ValueType.STRING:
+                        block.AddRow($"std::string {newName} = \"\";");
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"bool {newName} = false;");
+                        break;
+                    case ValueType.DATETIME:
+                        block.AddRow($"std::tm {newName};");
+                        break;
+                    case ValueType.VEC3:
+                        block.AddRow($"Vec3 {newName};");
+                        break;
+                    case ValueType.VEC2:
+                        block.AddRow($"Vec2 {newName};");
+                        break;
+                }
+            }
+            else
+            {
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                            block.AddRow($"std::map<int, const {field.RefSheetName}*> {newName};");
+                        else
+                            block.AddRow($"std::vector<int> {newName};");
+                        break;
+                    case ValueType.FLOAT:
+                        block.AddRow($"std::vector<float> {newName};");
+                        break;
+                    case ValueType.STRING:
+                        block.AddRow($"std::vector<std::string> {newName};");
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"std::vector<bool> {newName};");
+                        break;
+                }
             }
         }
 
@@ -250,43 +315,66 @@ namespace DataTool.Generator
         protected override void GetParseJsonField(ref FieldInfo field, CodeBlock block)
         {
             var newName = GetName(field.Name);
-            switch (field.TypeId)
+            if (!field.Container)
             {
-                case ValueType.INT:
-                    if (field.RefSheetName.Length > 0)
-                        block.AddRow($"dataObj._{newName} = j.at(\"{field.Name}\").get<int>();");
-                    else
-                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<int>();");
-                    break;
-                case ValueType.FLOAT:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<float>();");
-                    break;
-                case ValueType.STRING:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::string>();");
-                    break;
-                case ValueType.BOOL:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();");
-                    break;
-                case ValueType.DATETIME:
-                    block.AddRow("{");
-                    block.AddRow($"\tauto dateStr = j.at(\"{field.Name}\").get<std::string>();");
-                    block.AddRow($"\tstd::stringstream ss(dateStr);");
-                    block.AddRow($"\tss >> std::get_time(&dataObj.{newName}, \"%Y-%m-%dT%H:%M:%S\");");
-                    block.AddRow($"\tdataObj.{newName}.tm_isdst = 0;");
-                    block.AddRow("}");
-                    break;
-                case ValueType.VEC3:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<Vec3>();");
-                    break;
-                case ValueType.VEC2:
-                    block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<Vec2>();");
-                    break;
-                case ValueType.LIST:
-                    block.AddRow($"{{");
-                    block.AddRow($"\tauto ids = j.at(\"{field.Name}\").get<std::list<int>>();");
-                    block.AddRow($"\tfor(auto id : ids) dataObj.{newName}[id] = nullptr;");
-                    block.AddRow($"}}");
-                    break;
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                            block.AddRow($"dataObj._{newName} = j.at(\"{field.Name}\").get<int>();");
+                        else
+                            block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<int>();");
+                        break;
+                    case ValueType.FLOAT:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<float>();");
+                        break;
+                    case ValueType.STRING:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::string>();");
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<bool>();");
+                        break;
+                    case ValueType.DATETIME:
+                        block.AddRow("{");
+                        block.AddRow($"\tauto dateStr = j.at(\"{field.Name}\").get<std::string>();");
+                        block.AddRow($"\tstd::stringstream ss(dateStr);");
+                        block.AddRow($"\tss >> std::get_time(&dataObj.{newName}, \"%Y-%m-%dT%H:%M:%S\");");
+                        block.AddRow($"\tdataObj.{newName}.tm_isdst = 0;");
+                        block.AddRow("}");
+                        break;
+                    case ValueType.VEC3:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<Vec3>();");
+                        break;
+                    case ValueType.VEC2:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<Vec2>();");
+                        break;
+                }
+            }
+            else
+            {
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                        {
+                            block.AddRow($"{{");
+                            block.AddRow($"\tauto ids = j.at(\"{field.Name}\").get<std::vector<int>>();");
+                            block.AddRow($"\tfor(auto id : ids) dataObj.{newName}[id] = nullptr;");
+                            block.AddRow($"}}");
+                        }
+                        else
+                            block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::vector<int>>();");
+                        break;
+                    case ValueType.FLOAT:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::vector<float>>();");
+                        break;
+                    case ValueType.STRING:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::vector<std::string>>();");
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"dataObj.{newName} = j.at(\"{field.Name}\").get<std::vector<bool>>();");
+                        break;
+                }
             }
         }
 
@@ -303,13 +391,13 @@ namespace DataTool.Generator
             loadFunc.AddRow($"\tfor (const auto& elem : j)");
             loadFunc.AddRow($"\t{{");
             loadFunc.AddRow($"\t\tauto item = elem.get<{schemaInfo.SheetName}>();");
-            loadFunc.AddRow($"\t\tdata.emplace(item.Id, new {schemaInfo.SheetName}(item));");
+            loadFunc.AddRow($"\t\tdata.emplace(item.ID, new {schemaInfo.SheetName}(item));");
             loadFunc.AddRow($"\t}}");
             loadFunc.AddRow($"}}");
             return loadFunc;
         }
 
-        protected CodeBlock GenerateStaticDataClass(string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server)
+        protected CodeBlock GenerateStaticDataClass(string usingNamespace, ConcurrentDataMap<DataSchema> schemaInfos, bool server)
         {
             var classBlock = new CPPClassBlock();
             classBlock.SetBlockName($"class StaticData");
@@ -327,7 +415,6 @@ namespace DataTool.Generator
                 loadFunc.AddRow($"{schema.SheetName}::Load(jsonDir, _{schema.SheetName});");
             }
 
-            loadFunc.AddRow($"std::list<std::function<void()>> tasks;");
             foreach (var pair in schemaInfos)
             {
                 var schema = pair.Value;
@@ -351,25 +438,11 @@ namespace DataTool.Generator
                     if (field.TypeId == ValueType.INT)
                     {
                         var newName = GetName(field.Name);
-                        loadFunc.AddRow($"tasks.push_back([&](){{");
-                        loadFunc.AddRow($"\tfor (auto& [key, value] : _{schema.SheetName})");
-                        loadFunc.AddRow($"\t\tvalue->{newName} = _{field.RefSheetName}[value->_{newName}];");
-                        loadFunc.AddRow($"}});");
-                    }
-                    else if (field.TypeId == ValueType.LIST)
-                    {
-                        var newName = GetName(field.Name);
-                        loadFunc.AddRow($"tasks.push_back([&](){{");
-                        loadFunc.AddRow($"\tfor (auto& [key, value] : _{schema.SheetName})");
-                        loadFunc.AddRow($"\t{{");
-                        loadFunc.AddRow($"\t\tfor (auto& [key2, value2] : value->{newName})");
-                        loadFunc.AddRow($"\t\t\tvalue2 = _{field.RefSheetName}[key2];");
-                        loadFunc.AddRow($"\t}}\r\n");
-                        loadFunc.AddRow($"}});");
+                        loadFunc.AddRow($"{schema.SheetName}::Link{newName}(_{schema.SheetName}, _{field.RefSheetName});");
                     }
                 }
             }
-            loadFunc.AddRow($"while(!tasks.empty()) {{ auto task = tasks.front(); tasks.pop_front(); task(); }}");
+
             foreach (var pair in schemaInfos)
             {
                 var schema = pair.Value;

@@ -5,16 +5,16 @@ namespace GameData
 	{
 	public:
 		static void Load(std::string jsonDir, std::map<int, State*>&data);
-		int Id = 0;
+		int ID = 0;
 		int Type = 0;
 		int Value = 0;
 	};
 
 	void from_json(const json& j, State& dataObj)
 	{
-		dataObj.Id = j.at("id").get<int>();
-		dataObj.Type = j.at("type").get<int>();
-		dataObj.Value = j.at("value").get<int>();
+		dataObj.ID = j.at("ID").get<int>();
+		dataObj.Type = j.at("Type").get<int>();
+		dataObj.Value = j.at("Value").get<int>();
 	}
 
 	void State::Load(std::string jsonDir, std::map<int, State*>&data)
@@ -28,7 +28,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<State>();
-				data.emplace(item.Id, new State(item));
+				data.emplace(item.ID, new State(item));
 			}
 		}
 	}

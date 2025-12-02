@@ -11,7 +11,7 @@ namespace GameData
 			try {
 				string fileContent = File.ReadAllText(filePath);
 				var list = JsonConvert.DeserializeObject<List<MonsterState>>(fileContent);
-				list?.ForEach(data => { refDic.TryAdd(data.Id, data); });
+				list?.ForEach(data => { refDic.TryAdd(data.ID, data); });
 			} catch (FileNotFoundException) {
 				Console.WriteLine($"FileNotFound: {filePath}");
 				return false;
@@ -29,17 +29,18 @@ namespace GameData
 				item.Value.__Params?.ForEach(data => {
 					State? refItem = null;
 					if (false == refDic.TryGetValue(data, out refItem) || refItem == null) return;
-					item.Value._Params.TryAdd(refItem.Id, refItem);
+					item.Value._Params.TryAdd(refItem.ID, refItem);
 				});
 			}
 		}
 
-		[JsonProperty("id")]
-		public int Id { get; init; } = 0;
-		[JsonProperty("params")]
+		[JsonProperty("ID")]
+		public int ID { get; init; } = 0;
+		[JsonProperty("Params")]
 		private List<int>? __Params;
 		[JsonIgnore]
 		private Dictionary<int, State> _Params = new Dictionary<int, State>();
+		[JsonIgnore]
 		public IReadOnlyDictionary<int, State> Params { get { return _Params; } }
 	}
 

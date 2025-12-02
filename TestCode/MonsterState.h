@@ -5,17 +5,25 @@ namespace GameData
 	class MonsterState
 	{
 	public:
+		static void Linkparams(std::map<int, GameData::MonsterState*>& mapMonsterState, std::map<int, GameData::State*>& mapState)
+		{
+			for (auto& [key, value] : mapMonsterState)
+				for (auto& [key2, value2] : value->params)
+					if (auto find = mapState.find(key2); find != mapState.end())
+						value2 = find->second;
+		}
+
 		static void Load(std::string jsonDir, std::map<int, MonsterState*>&data);
-		int Id = 0;
-		std::map<int, State*> Params;
+		int ID = 0;
+		std::map<int, const State*> params;
 	};
 
 	void from_json(const json& j, MonsterState& dataObj)
 	{
-		dataObj.Id = j.at("id").get<int>();
+		dataObj.ID = j.at("ID").get<int>();
 		{
-			auto ids = j.at("params").get<std::list<int>>();
-			for(auto id : ids) dataObj.Params[id] = nullptr;
+			auto ids = j.at("params").get<std::vector<int>>();
+			for(auto id : ids) dataObj.params[id] = nullptr;
 		}
 	}
 
@@ -30,7 +38,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<MonsterState>();
-				data.emplace(item.Id, new MonsterState(item));
+				data.emplace(item.ID, new MonsterState(item));
 			}
 		}
 	}

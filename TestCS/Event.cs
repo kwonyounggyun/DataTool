@@ -11,7 +11,7 @@ namespace GameData
 			try {
 				string fileContent = File.ReadAllText(filePath);
 				var list = JsonConvert.DeserializeObject<List<Event>>(fileContent);
-				list?.ForEach(data => { refDic.TryAdd(data.Id, data); });
+				list?.ForEach(data => { refDic.TryAdd(data.ID, data); });
 			} catch (FileNotFoundException) {
 				Console.WriteLine($"FileNotFound: {filePath}");
 				return false;
@@ -22,12 +22,12 @@ namespace GameData
 			return true;
 		}
 
-		[JsonProperty("id")]
-		public int Id { get; init; } = 0;
+		[JsonProperty("ID")]
+		public int ID { get; init; } = 0;
 		[JsonProperty("time")]
-		public DateTime Time { get; init; } = DateTime.Now.AddYears(-125);
+		public DateTime time { get; init; } = DateTime.Now.AddYears(-125);
 		[JsonProperty("value")]
-		public int Value { get; init; } = 0;
+		public int value { get; init; } = 0;
 	}
 
 }

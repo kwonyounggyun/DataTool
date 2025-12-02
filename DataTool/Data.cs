@@ -77,6 +77,7 @@ namespace DataTool
         public int Index { get; set; } = 0;
         public string Name { get; set; } = "";
         public ValueType TypeId { get; set; } = 0;
+        public bool Container { get; set; } = false;
         public bool Server { get; set; } = false;
         public bool Client { get; set; } = false;
         public string RefSheetName { get; set; } = "";
@@ -93,7 +94,6 @@ namespace DataTool
         DATETIME,
         VEC3,
         VEC2,
-        LIST,
     }
     public struct SchemaColumn
     {
@@ -107,6 +107,7 @@ namespace DataTool
         public string Name;
         public int ColumnNum;
         public ValueType TypeId;
+        public bool Container;
         public bool Required;
         public bool Server;
         public bool Client;
@@ -126,6 +127,13 @@ namespace DataTool
         public DataSchema(string sheetName)
         {
             SheetName = sheetName;
+            var idField = new FieldInfo();
+            idField.Name = "ID";
+            idField.TypeId = ValueType.INT;
+            idField.Server = true;
+            idField.Client = true;
+            idField.Required = true;
+            AddFieldInfo(idField);
         }
 
         public static Dictionary<string, ValueType> TypeMap = new()
@@ -137,7 +145,6 @@ namespace DataTool
             { "datetime", ValueType.DATETIME },
             { "vec3", ValueType.VEC3 },
             { "vec2", ValueType.VEC2 },
-            { "list", ValueType.LIST },
         };
 
         public static Dictionary<string, IValidatable> SchemaHeaderMap = new()
@@ -145,6 +152,7 @@ namespace DataTool
             { "id", new ValidInt() },
             { "name", new ValidString() },
             { "type", new ValidType() },
+            { "container", new ValidBool() },
             { "required", new ValidBool() },
             { "ref", new ValidReference() },
             { "server", new ValidBool() },
@@ -153,24 +161,19 @@ namespace DataTool
 
         public bool AddFieldInfo(FieldInfo info)
         {
-            FieldInfo? findInfo;
-            if (true == FieldInfos.TryGetValue(info.Name, out findInfo))
-                return false;
-
-            FieldInfos.Add(info.Name, info);
-            return true;
+            return FieldInfos.TryAdd(info.Name.ToLower(), info);
         }
 
         public FieldInfo? GetFieldInfo(string name)
         {
             FieldInfo? findInfo;
-            FieldInfos.TryGetValue(name, out findInfo);
+            FieldInfos.TryGetValue(name.ToLower(), out findInfo);
 
             return findInfo;
         }
 
         public string SheetName { get; private set; }
-        public Dictionary<string, FieldInfo> FieldInfos = new Dictionary<string, FieldInfo>();
+        public Dictionary<string, FieldInfo> FieldInfos { get; } = new Dictionary<string, FieldInfo>();
     }
 
     public class RowData

@@ -58,7 +58,7 @@ namespace DataTool.Generator
 
     public abstract class CodeGenerator
     {
-        public abstract void Generate(string outFilePath, string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false);
+        public abstract void Generate(string outFilePath, string usingNamespace, ConcurrentDataMap<DataSchema> schemaInfos, bool server = false);
         protected abstract List<CodeBlock> GetDefaultClasses();
         protected abstract CodeBlock GenerateClass(ref DataSchema schemaInfo, bool server = false);
         protected abstract void GetField(ref FieldInfo field, CodeBlock block);
@@ -67,7 +67,8 @@ namespace DataTool.Generator
 
         protected string GetName(string fieldName)
         {
-            return char.ToUpper(fieldName[0]) + fieldName.Substring(1);
+            return fieldName;
+            //return char.ToUpper(fieldName[0]) + fieldName.Substring(1);
         }
     }
 }

@@ -72,9 +72,9 @@ namespace DataTool
         Vec2 _value;
     }
 
-    public class ListValue : IValue
+    public class ListValue<T> : IValue
     {
-        public ListValue(List<int> value) { _value = value; }
+        public ListValue(List<T> value) { _value = value; }
 
         public bool GetJson(ref string key, ref JObject obj)
         {
@@ -85,6 +85,6 @@ namespace DataTool
             return true;
         }
 
-        List<int> _value;
+        List<T> _value;
     }
 }

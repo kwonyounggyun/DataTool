@@ -5,21 +5,21 @@ namespace GameData
 	{
 	public:
 		static void Load(std::string jsonDir, std::map<int, Event*>&data);
-		int Id = 0;
-		std::tm Time;
-		int Value = 0;
+		int ID = 0;
+		std::tm time;
+		int value = 0;
 	};
 
 	void from_json(const json& j, Event& dataObj)
 	{
-		dataObj.Id = j.at("id").get<int>();
+		dataObj.ID = j.at("ID").get<int>();
 		{
 			auto dateStr = j.at("time").get<std::string>();
 			std::stringstream ss(dateStr);
-			ss >> std::get_time(&dataObj.Time, "%Y-%m-%dT%H:%M:%S");
-			dataObj.Time.tm_isdst = 0;
+			ss >> std::get_time(&dataObj.time, "%Y-%m-%dT%H:%M:%S");
+			dataObj.time.tm_isdst = 0;
 		}
-		dataObj.Value = j.at("value").get<int>();
+		dataObj.value = j.at("value").get<int>();
 	}
 
 	void Event::Load(std::string jsonDir, std::map<int, Event*>&data)
@@ -33,7 +33,7 @@ namespace GameData
 			for (const auto& elem : j)
 			{
 				auto item = elem.get<Event>();
-				data.emplace(item.Id, new Event(item));
+				data.emplace(item.ID, new Event(item));
 			}
 		}
 	}

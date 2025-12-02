@@ -38,10 +38,10 @@ namespace GameData
 	}
 
 }
-#include "SpawnData.h"
-#include "State.h"
-#include "MonsterState.h"
 #include "Event.h"
+#include "SpawnData.h"
+#include "MonsterState.h"
+#include "State.h"
 namespace GameData
 {
 	class StaticData
@@ -49,38 +49,26 @@ namespace GameData
 	public:
 		void Load(std::string jsonDir)
 		{
-			std::map <int, GameData::SpawnData*> _SpawnData;
-			std::map <int, GameData::State*> _State;
-			std::map <int, GameData::MonsterState*> _MonsterState;
 			std::map <int, GameData::Event*> _Event;
-			SpawnData::Load(jsonDir, _SpawnData);
-			State::Load(jsonDir, _State);
-			MonsterState::Load(jsonDir, _MonsterState);
+			std::map <int, GameData::SpawnData*> _SpawnData;
+			std::map <int, GameData::MonsterState*> _MonsterState;
+			std::map <int, GameData::State*> _State;
 			Event::Load(jsonDir, _Event);
-			std::list<std::function<void()>> tasks;
-			tasks.push_back([&](){
-				for (auto& [key, value] : _SpawnData)
-					value->State = _State[value->_State];
-			});
-			tasks.push_back([&](){
-				for (auto& [key, value] : _MonsterState)
-				{
-					for (auto& [key2, value2] : value->Params)
-						value2 = _State[key2];
-				}
-
-			});
-			while(!tasks.empty()) { auto task = tasks.front(); tasks.pop_front(); task(); }
-			SpawnData.insert(_SpawnData.begin(), _SpawnData.end());
-			State.insert(_State.begin(), _State.end());
-			MonsterState.insert(_MonsterState.begin(), _MonsterState.end());
+			SpawnData::Load(jsonDir, _SpawnData);
+			MonsterState::Load(jsonDir, _MonsterState);
+			State::Load(jsonDir, _State);
+			SpawnData::LinkState(_SpawnData, _State);
+			MonsterState::Linkparams(_MonsterState, _State);
 			Event.insert(_Event.begin(), _Event.end());
+			SpawnData.insert(_SpawnData.begin(), _SpawnData.end());
+			MonsterState.insert(_MonsterState.begin(), _MonsterState.end());
+			State.insert(_State.begin(), _State.end());
 		}
 
-		std::map<int, const GameData::SpawnData*> SpawnData;
-		std::map<int, const GameData::State*> State;
-		std::map<int, const GameData::MonsterState*> MonsterState;
 		std::map<int, const GameData::Event*> Event;
+		std::map<int, const GameData::SpawnData*> SpawnData;
+		std::map<int, const GameData::MonsterState*> MonsterState;
+		std::map<int, const GameData::State*> State;
 	};
 
 }

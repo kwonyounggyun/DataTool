@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -14,7 +15,7 @@ namespace DataTool.Generator
 {
     public sealed class CSharpGenerator : CodeGenerator
     {
-        public override void Generate(string outFilePath, string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server = false)
+        public override void Generate(string outFilePath, string usingNamespace, ConcurrentDataMap<DataSchema> schemaInfos, bool server = false)
         {
             var main = new CodeBlock();
             main.AddPost("using System.Collections.Generic;");
@@ -93,7 +94,7 @@ namespace DataTool.Generator
             loadBlock.AddRow($"try {{");
             loadBlock.AddRow($"\tstring fileContent = File.ReadAllText(filePath);");
             loadBlock.AddRow($"\tvar list = JsonConvert.DeserializeObject<List<{schemaInfo.SheetName}>>(fileContent);");
-            loadBlock.AddRow($"\tlist?.ForEach(data => {{ refDic.TryAdd(data.Id, data); }});");
+            loadBlock.AddRow($"\tlist?.ForEach(data => {{ refDic.TryAdd(data.ID, data); }});");
             loadBlock.AddRow($"}} catch (FileNotFoundException) {{");
             loadBlock.AddRow($"\tConsole.WriteLine($\"FileNotFound: {{filePath}}\");");
             loadBlock.AddRow($"\treturn false;");
@@ -124,32 +125,35 @@ namespace DataTool.Generator
                 {
                     if(field.TypeId == ValueType.INT)
                     {
-                        var newName = GetName(field.Name);
-                        var linkBlock = new CodeBlock();
-                        linkBlock.SetBlockName($"public static void Link{newName}(ref Dictionary<int, {schemaInfo.SheetName}> dic, IReadOnlyDictionary<int, {field.RefSheetName}> refDic)");
-                        linkBlock.AddRow($"foreach (var item in dic)");
-                        linkBlock.AddRow($"{{");
-                        linkBlock.AddRow($"\tif (item.Value.__{newName} == 0) return;");
-                        linkBlock.AddRow($"\t{field.RefSheetName}? refItem = null;");
-                        linkBlock.AddRow($"\tif (false == refDic.TryGetValue(item.Value.__{newName}, out refItem) || refItem == null) return;");
-                        linkBlock.AddRow($"\titem.Value._{newName} = refItem;");
-                        linkBlock.AddRow($"}}");
-                        classBlock.AddBlock(linkBlock);
-                    }
-                    else if (field.TypeId == ValueType.LIST)
-                    {
-                        var newName = GetName(field.Name);
-                        var linkBlock = new CodeBlock();
-                        linkBlock.SetBlockName($"public static void Link{newName}(ref Dictionary<int, {schemaInfo.SheetName}> dic, IReadOnlyDictionary<int, {field.RefSheetName}> refDic)");
-                        linkBlock.AddRow($"foreach (var item in dic)");
-                        linkBlock.AddRow($"{{");
-                        linkBlock.AddRow($"\titem.Value.__{newName}?.ForEach(data => {{");
-                        linkBlock.AddRow($"\t\t{field.RefSheetName}? refItem = null;");
-                        linkBlock.AddRow($"\t\tif (false == refDic.TryGetValue(data, out refItem) || refItem == null) return;");
-                        linkBlock.AddRow($"\t\titem.Value._{newName}.TryAdd(refItem.Id, refItem);");
-                        linkBlock.AddRow($"\t}});");
-                        linkBlock.AddRow($"}}");
-                        classBlock.AddBlock(linkBlock);
+                        if (!field.Container)
+                        {
+                            var newName = GetName(field.Name);
+                            var linkBlock = new CodeBlock();
+                            linkBlock.SetBlockName($"public static void Link{newName}(ref Dictionary<int, {schemaInfo.SheetName}> dic, IReadOnlyDictionary<int, {field.RefSheetName}> refDic)");
+                            linkBlock.AddRow($"foreach (var item in dic)");
+                            linkBlock.AddRow($"{{");
+                            linkBlock.AddRow($"\tif (item.Value.__{newName} == 0) return;");
+                            linkBlock.AddRow($"\t{field.RefSheetName}? refItem = null;");
+                            linkBlock.AddRow($"\tif (false == refDic.TryGetValue(item.Value.__{newName}, out refItem) || refItem == null) return;");
+                            linkBlock.AddRow($"\titem.Value._{newName} = refItem;");
+                            linkBlock.AddRow($"}}");
+                            classBlock.AddBlock(linkBlock);
+                        }
+                        else
+                        {
+                            var newName = GetName(field.Name);
+                            var linkBlock = new CodeBlock();
+                            linkBlock.SetBlockName($"public static void Link{newName}(ref Dictionary<int, {schemaInfo.SheetName}> dic, IReadOnlyDictionary<int, {field.RefSheetName}> refDic)");
+                            linkBlock.AddRow($"foreach (var item in dic)");
+                            linkBlock.AddRow($"{{");
+                            linkBlock.AddRow($"\titem.Value.__{newName}?.ForEach(data => {{");
+                            linkBlock.AddRow($"\t\t{field.RefSheetName}? refItem = null;");
+                            linkBlock.AddRow($"\t\tif (false == refDic.TryGetValue(data, out refItem) || refItem == null) return;");
+                            linkBlock.AddRow($"\t\titem.Value._{newName}.TryAdd(refItem.ID, refItem);");
+                            linkBlock.AddRow($"\t}});");
+                            linkBlock.AddRow($"}}");
+                            classBlock.AddBlock(linkBlock);
+                        }
                     }
                 }
             }
@@ -159,59 +163,98 @@ namespace DataTool.Generator
         protected override void GetField(ref FieldInfo field, CodeBlock block) 
         {
             var newName = GetName(field.Name);
-            switch (field.TypeId)
+
+            if (!field.Container)
             {
-                case ValueType.INT:
-                    if (field.RefSheetName.Length > 0)
-                    {
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                        {
+                            block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                            block.AddRow($"private int __{newName} {{ get; init; }} = 0;");
+                            block.AddRow($"[JsonIgnore]");
+                            block.AddRow($"private {field.RefSheetName}? _{newName} = null;");
+                            block.AddRow($"public ref readonly {field.RefSheetName}? {newName} => ref _{newName};");
+                        }
+                        else
+                        {
+                            block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                            block.AddRow($"public int {newName} {{ get; init; }} = 0;");
+                        }
+                        break;
+                    case ValueType.FLOAT:
                         block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                        block.AddRow($"private int __{newName} {{ get; init; }} = 0;");
+                        block.AddRow($"public float {newName} {{ get; init; }} = 0;");
+                        break;
+                    case ValueType.STRING:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"public string {newName} {{ get; init; }} = \"\";");
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"public bool {newName} {{ get; init; }} = false;");
+                        break;
+                    case ValueType.DATETIME:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"public DateTime {newName} {{ get; init; }} = DateTime.Now.AddYears(-125);");
+                        break;
+                    case ValueType.VEC3:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"public Vec3 {newName} {{ get; init; }} = new Vec3();");
+                        break;
+                    case ValueType.VEC2:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"public Vec2 {newName} {{ get; init; }} = new Vec2();");
+                        break;
+                }
+            }
+            else
+            {
+                switch (field.TypeId)
+                {
+                    case ValueType.INT:
+                        if (field.RefSheetName.Length > 0)
+                        {
+                            block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                            block.AddRow($"private List<int>? __{newName};");
+                            block.AddRow($"[JsonIgnore]");
+                            block.AddRow($"private Dictionary<int, {field.RefSheetName}> _{newName} = new Dictionary<int, {field.RefSheetName}>();");
+                            block.AddRow($"[JsonIgnore]");
+                            block.AddRow($"public IReadOnlyDictionary<int, {field.RefSheetName}> {newName} {{ get {{ return _{newName}; }} }}");
+                        }
+                        else
+                        {
+                            block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                            block.AddRow($"private List<int> _{newName} = new List<int>();");
+                            block.AddRow($"[JsonIgnore]");
+                            block.AddRow($"public IReadOnlyList<int> {newName} {{ get {{ return _{newName}; }} }}");
+                        }
+                        break;
+                    case ValueType.FLOAT:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"private List<float> _{newName} = new List<float>();");
                         block.AddRow($"[JsonIgnore]");
-                        block.AddRow($"private {field.RefSheetName}? _{newName} = null;");
-                        block.AddRow($"public ref readonly {field.RefSheetName}? {newName} => ref _{newName};");
-                    }
-                    else
-                    {
+                        block.AddRow($"public IReadOnlyList<float> {newName} {{ get {{ return _{newName}; }} }}");
+                        break;
+                    case ValueType.STRING:
                         block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                        block.AddRow($"public int {newName} {{ get; init; }} = 0;");
-                    }
-                    break;
-                case ValueType.FLOAT:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public float {newName} {{ get; init; }} = 0;");
-                    break;
-                case ValueType.STRING:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public string {newName} {{ get; init; }} = \"\";");
-                    break;
-                case ValueType.BOOL:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public bool {newName} {{ get; init; }} = false;");
-                    break;
-                case ValueType.DATETIME:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public DateTime {newName} {{ get; init; }} = DateTime.Now.AddYears(-125);");
-                    break;
-                case ValueType.VEC3:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public Vec3 {newName} {{ get; init; }} = new Vec3();");
-                    break;
-                case ValueType.VEC2:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"public Vec2 {newName} {{ get; init; }} = new Vec2();");
-                    break;
-                case ValueType.LIST:
-                    block.AddRow($"[JsonProperty(\"{field.Name}\")]");
-                    block.AddRow($"private List<int>? __{newName};");
-                    block.AddRow($"[JsonIgnore]");
-                    block.AddRow($"private Dictionary<int, {field.RefSheetName}> _{newName} = new Dictionary<int, {field.RefSheetName}>();");
-                    block.AddRow($"public IReadOnlyDictionary<int, {field.RefSheetName}> {newName} {{ get {{ return _{newName}; }} }}");
-                    break;
+                        block.AddRow($"private List<string> _{newName} = new List<string>();");
+                        block.AddRow($"[JsonIgnore]");
+                        block.AddRow($"public IReadOnlyList<string> {newName} {{ get {{ return _{newName}; }} }}"); ;
+                        break;
+                    case ValueType.BOOL:
+                        block.AddRow($"[JsonProperty(\"{field.Name}\")]");
+                        block.AddRow($"private List<bool> _{newName} = new List<bool>();");
+                        block.AddRow($"[JsonIgnore]");
+                        block.AddRow($"public IReadOnlyList<bool> {newName} {{ get {{ return _{newName}; }} }}");
+                        break;
+                }
             }
         }
         protected override CodeBlock GenerateJsonParser(ref DataSchema schemaInfo, bool server = false) { return new CodeBlock(); }
         protected override void GetParseJsonField(ref FieldInfo field, CodeBlock block) { return; }
-        protected CodeBlock GenerateStaticDataClass(string usingNamespace, ConcurrentDictionary<string, DataSchema> schemaInfos, bool server)
+        protected CodeBlock GenerateStaticDataClass(string usingNamespace, ConcurrentDataMap<DataSchema> schemaInfos, bool server)
         {
             var dataClass = new CodeBlock();
             dataClass.SetBlockName("public class StaticData");

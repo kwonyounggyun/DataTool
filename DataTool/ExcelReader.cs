@@ -4,26 +4,85 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.CustomXmlSchemaReferences;
 using DocumentFormat.OpenXml.Drawing.Charts;
 using DocumentFormat.OpenXml.Office2010.Excel;
+using DocumentFormat.OpenXml.Office2010.PowerPoint;
 using DocumentFormat.OpenXml.Office2010.Word.DrawingGroup;
+using DocumentFormat.OpenXml.Office2013.Excel;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Vml;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Data;
+using System.Dynamic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using static DataTool.DataSchema;
+using static System.Reflection.Metadata.BlobBuilder;
 
 namespace DataTool
 {
+    public class ConcurrentDataMap<T> : IEnumerable<KeyValuePair<string, T>>
+    {
+        public bool Find(string key, out T? value)
+        {
+            return schema.TryGetValue(key.ToLower(), out value);
+        }
+
+        public bool Add(string key, T item)
+        {
+            return schema.TryAdd(key.ToLower(), item);
+        }
+
+        IEnumerator<KeyValuePair<string, T>> IEnumerable<KeyValuePair<string, T>>.GetEnumerator()
+        {
+            return schema.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return schema.GetEnumerator();
+        }
+
+        public int Count { get { return schema.Count; } }
+        private ConcurrentDictionary<string, T> schema = new ConcurrentDictionary<string, T>();
+    }
+
+    public class DataMap<T> : IEnumerable<KeyValuePair<string, T>>
+    {
+        public bool Find(string key, out T? value)
+        {
+            return schema.TryGetValue(key.ToLower(), out value);
+        }
+
+        public bool Add(string key, T item)
+        {
+            return schema.TryAdd(key.ToLower(), item);
+        }
+
+        IEnumerator<KeyValuePair<string, T>> IEnumerable<KeyValuePair<string, T>>.GetEnumerator()
+        {
+            return schema.GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return schema.GetEnumerator();
+        }
+
+        public int Count { get { return schema.Count; } }
+        private Dictionary<string, T> schema = new Dictionary<string, T>();
+    }
+
     internal class ExcelReader
     {
-        public static ConcurrentDictionary<string, DataSchema> schema = new ConcurrentDictionary<string, DataSchema>();
-        public static ConcurrentDictionary<string, RowData> rowDatas = new ConcurrentDictionary<string, RowData>();
+        public static ConcurrentDataMap<DataSchema> schema = new ConcurrentDataMap<DataSchema>();
+        public static ConcurrentDataMap<RowData> rowDatas = new ConcurrentDataMap<RowData>();
 
         // 파일이 열려있는 상태에서도 툴을 사용할 수 있게하기 위해 메모리에 올린 후 실행
         public void Open(string path)
@@ -43,24 +102,24 @@ namespace DataTool
             wb = new XLWorkbook(ms);
         }
 
-        public bool ReadSchemaHeader(IXLWorksheet item, out Dictionary<string, SchemaColumn> readColumns)
+        public bool ReadSchemaHeader(IXLWorksheet item, out DataMap<SchemaColumn> readColumns)
         {
             bool result = true;
-            readColumns = new Dictionary<string, SchemaColumn>();
+            readColumns = new DataMap<SchemaColumn> ();
             foreach (var row in item.RowsUsed())
             {
                 foreach (var cell in row.CellsUsed())
                 {
-                    var colName = cell.GetValue<string>().ToLower();
+                    var colName = cell.GetValue<string>();
                     IValidatable outValue;
-                    if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName, out outValue))
+                    if (false == DataSchema.SchemaHeaderMap.TryGetValue(colName.ToLower(), out outValue))
                         continue;
 
                     var schemaColumn = new SchemaColumn();
                     schemaColumn.Name = colName;
                     schemaColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     schemaColumn.Validatable = outValue;
-                    if (false == readColumns.TryAdd(schemaColumn.Name, schemaColumn))
+                    if (false == readColumns.Add(schemaColumn.Name, schemaColumn))
                     {
                         Console.WriteLine($"[Error] Duplicate Column Name Detected: {schemaColumn.Name} in Sheet: {item.Name}");
                         result = false;
@@ -73,27 +132,35 @@ namespace DataTool
             return result;
         }
 
-        public bool ReadDataHeader(IXLWorksheet item, DataSchema dataSchema, out Dictionary<string, DataColumn> dataHeader)
+        public bool ReadDataHeader(IXLWorksheet item, DataSchema dataSchema, out DataMap<DataColumn> dataHeader)
         {
             bool result = true;
-            dataHeader = new Dictionary<string, DataColumn>();
+            dataHeader = new DataMap<DataColumn>();
             foreach (var row in item.RowsUsed())
             {
                 foreach (var cell in row.CellsUsed())
                 {
-                    var colName = cell.GetValue<string>().ToLower();
+                    var colName = cell.GetValue<string>();
                     var fieldInfo = dataSchema.GetFieldInfo(colName);
                     if (fieldInfo == null)
                         continue;
+
+                    if (fieldInfo.Name.CompareTo(colName) != 0)
+                    {
+                        Console.WriteLine($"[Error] Field name \'{colName}\' not match for schema field name \'{fieldInfo.Name}\' : in Sheet: {item.Name}");
+                        result = false;
+                        continue;
+                    }
 
                     var dataColumn = new DataColumn();
                     dataColumn.Name = colName;
                     dataColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     dataColumn.TypeId = fieldInfo.TypeId;
+                    dataColumn.Container = fieldInfo.Container;
                     dataColumn.Required = fieldInfo.Required;
                     dataColumn.Server = fieldInfo.Server;
                     dataColumn.Client = fieldInfo.Client;
-                    if (false == dataHeader.TryAdd(dataColumn.Name, dataColumn))
+                    if (false == dataHeader.Add(dataColumn.Name, dataColumn))
                     {
                         Console.WriteLine($"[Error] Duplicate Column Name Detected: {dataColumn.Name} in Sheet: {item.Name}");
                         result = false;
@@ -101,6 +168,26 @@ namespace DataTool
                 }
 
                 break;
+            }
+
+            if(dataHeader.Count != dataSchema.FieldInfos.Count)
+            {
+                foreach (var field in dataSchema.FieldInfos)
+                {
+                    DataColumn find;
+                    if (false == dataHeader.Find(field.Key, out find))
+                    {
+                        Console.WriteLine($"[Error] Field Name \'{field.Value.Name}\' not in Sheet: {item.Name}");
+                        result = false;
+                        continue;
+                    }
+
+                    if(field.Value.Name.CompareTo(find.Name) != 0)
+                    {
+                        Console.WriteLine($"[Error] Field Name \'{find.Name}\' not match shema field name \'{field.Value.Name}\' in Sheet: {item.Name}");
+                        result = false;
+                    }
+                }
             }
 
             return result;
@@ -119,13 +206,13 @@ namespace DataTool
                 if (item.Name.ElementAt(0) != '_')
                     continue;
 
-                Dictionary<string, SchemaColumn> readColumns;
+                DataMap<SchemaColumn> readColumns;
                 if (false == ReadSchemaHeader(item, out readColumns))
                     return false;
 
                 foreach (var pair in DataSchema.SchemaHeaderMap)
                 {
-                    if (readColumns.ContainsKey(pair.Key) == false)
+                    if (readColumns.Find(pair.Key, out var field) == false)
                     {
                         Console.WriteLine($"[Error] '{pair.Key}' Column Not Found in Sheet: {item.Name}");
                         return false;
@@ -156,10 +243,13 @@ namespace DataTool
                         switch(pair.Key)
                         {
                             case "name":
-                                fieldInfo.Name = cell.GetValue<string>().ToLower();
+                                fieldInfo.Name = cell.GetValue<string>();
                                 break;
                             case "type":
                                 fieldInfo.TypeId = DataSchema.TypeMap[cell.GetValue<string>()];
+                                break;
+                            case "container":
+                                fieldInfo.Container = cell.GetValue<string>().ToLower() == "true" ? true : false;
                                 break;
                             case "ref":
                                 fieldInfo.RefSheetName = cell.GetValue<string>();
@@ -176,16 +266,20 @@ namespace DataTool
                         }
                     }
 
-                    if(fieldInfo.TypeId != ValueType.INT && fieldInfo.TypeId != ValueType.LIST && fieldInfo.RefSheetName.Length > 0)
+                    if(fieldInfo.TypeId != ValueType.INT && fieldInfo.RefSheetName.Length > 0)
                     {
-                        Console.WriteLine($"[Error] Only int and list have to be ref value : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
+                        Console.WriteLine($"[Error] Only int have to be ref value : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
                         schemaDataError = true;
                         continue;
                     }
 
-                    if (fieldInfo.TypeId == ValueType.LIST && fieldInfo.RefSheetName.Length <= 0)
+                    if (fieldInfo.Container == true &&
+                        fieldInfo.TypeId != ValueType.INT &&
+                        fieldInfo.TypeId != ValueType.FLOAT &&
+                        fieldInfo.TypeId != ValueType.STRING &&
+                        fieldInfo.TypeId != ValueType.BOOL)
                     {
-                        Console.WriteLine($"[Error] List type have to need ref : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
+                        Console.WriteLine($"[Error] Container have to be int, float, string, bool : Row Num : {row.RowNumber()} in Sheet: {item.Name}");
                         schemaDataError = true;
                         continue;
                     }
@@ -196,7 +290,7 @@ namespace DataTool
                 if (schemaDataError)
                     return false;
 
-                if(false == schema.TryAdd(schemaData.SheetName, schemaData))
+                if(false == schema.Add(schemaData.SheetName, schemaData))
                     Console.WriteLine($"[Error] Duplicate Schema Name Detected: {item.Name} in Excel: {excelPath}");
             }
 
@@ -211,13 +305,13 @@ namespace DataTool
                     continue;
 
                 DataSchema? schemaInfo;
-                if (false == schema.TryGetValue(item.Name, out schemaInfo))
+                if (false == schema.Find(item.Name, out schemaInfo) || schemaInfo == null)
                 {
                     Console.WriteLine($"[Error] Schema Info Not Found. {item.Name} in Excel: {excelPath}");
                     return false;
                 }
 
-                Dictionary<string, DataColumn> readDataHeader;
+                DataMap<DataColumn> readDataHeader;
                 if (false == ReadDataHeader(item, schemaInfo, out readDataHeader))
                     return false;
 
@@ -247,7 +341,7 @@ namespace DataTool
                             continue;
                         }
 
-                        if (columnInfo.Name.CompareTo("id") == 0)
+                        if (columnInfo.Name.ToLower().CompareTo("id") == 0)
                         {
                             try
                             {
@@ -266,170 +360,317 @@ namespace DataTool
 
                         try
                         {
-                            switch (columnInfo.TypeId)
+                            if (!columnInfo.Container)
                             {
-                                case ValueType.INT:
-                                    {
-                                        if (cell.IsEmpty())
+                                switch (columnInfo.TypeId)
+                                {
+                                    case ValueType.INT:
                                         {
-                                            var tVal = new TValue<int>(0);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<int>();
-                                            var tVal = new TValue<int>(val);
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.FLOAT:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            var tVal = new TValue<float>(0);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<float>();
-                                            var tVal = new TValue<float>(val);
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.STRING:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            var tVal = new TValue<string>("");
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<string>();
-                                            var tVal = new TValue<string>(val);
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.BOOL:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            var tVal = new TValue<bool>(false);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<bool>();
-                                            var tVal = new TValue<bool>(val);
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.DATETIME:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            var tVal = new TValue<DateTime>(DateTime.Parse("2025-01-01 00:00:00"));
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<string>();
-                                            var tVal = new TValue<DateTime>(DateTime.Parse(val));
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.VEC3:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            Vec3 vec = new Vec3();
-                                            vec.x = 0.0f;
-                                            vec.y = 0.0f;
-                                            vec.z = 0.0f;
-                                            var tVal = new Vec3Value(vec);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<string>();
-                                            var split = val.Split(',');
-                                            if (split.Length != 3)
+                                            if (!columnInfo.Container)
                                             {
-                                                Console.WriteLine($"[Error] Vec3 : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
-                                                readError = true;
-                                                continue;
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new TValue<int>(0);
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<int>();
+                                                    var tVal = new TValue<int>(val);
+                                                    dataRow.Add(tVal);
+                                                }
                                             }
-
-                                            Vec3 vec = new Vec3();
-                                            vec.x = float.Parse(split[0]);
-                                            vec.y = float.Parse(split[1]);
-                                            vec.z = float.Parse(split[2]);
-                                            var tVal = new Vec3Value(vec);
-                                            dataRow.Add(tVal);
-                                        }
-                                    }
-                                    break;
-                                case ValueType.VEC2:
-                                    {
-                                        if (cell.IsEmpty())
-                                        {
-                                            Vec2 vec = new Vec2();
-                                            vec.x = 0.0f;
-                                            vec.y = 0.0f;
-                                            var tVal = new Vec2Value(vec);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<string>();
-                                            var split = val.Split(',');
-                                            if (split.Length != 2)
+                                            else
                                             {
-                                                Console.WriteLine($"[Error] Vec2 : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
-                                                readError = true;
-                                                continue;
+                                                List<int> list = new List<int>();
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new ListValue<int>(list);
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<string>();
+                                                    var split = val.Split(',');
+
+                                                    foreach (var s in split)
+                                                        list.Add(int.Parse(s));
+
+                                                    var tVal = new ListValue<int>(list);
+                                                    dataRow.Add(tVal);
+                                                }
                                             }
-
-                                            Vec2 vec = new Vec2();
-                                            vec.x = float.Parse(split[0]);
-                                            vec.y = float.Parse(split[1]);
-                                            var tVal = new Vec2Value(vec);
-                                            dataRow.Add(tVal);
                                         }
-                                    }
-                                    break;
-                                case ValueType.LIST:
-                                    {
-                                        List<int> idList = new List<int>();
-                                        if (cell.IsEmpty())
+                                        break;
+                                    case ValueType.FLOAT:
                                         {
-                                            var tVal = new ListValue(idList);
-                                            dataRow.Add(tVal);
-                                        }
-                                        else
-                                        {
-                                            var val = cell.GetValue<string>();
-                                            var split = val.Split(',');
-                                            
-                                            foreach (var s in split)
-                                                idList.Add(int.Parse(s));
+                                            if (!columnInfo.Container)
+                                            {
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new TValue<float>(0);
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<float>();
+                                                    var tVal = new TValue<float>(val);
+                                                    dataRow.Add(tVal);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                List<float> list = new List<float>();
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new ListValue<float>(list);
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<string>();
+                                                    var split = val.Split(',');
 
-                                            var tVal = new ListValue(idList);
-                                            dataRow.Add(tVal);
+                                                    foreach (var s in split)
+                                                        list.Add(float.Parse(s));
+
+                                                    var tVal = new ListValue<float>(list);
+                                                    dataRow.Add(tVal);
+                                                }
+                                            }
                                         }
-                                    }
-                                    break;
-                                default:
-                                    {
-                                        Console.WriteLine($"[Error] No Match Type : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
-                                        readError = true;
-                                    }
-                                    break;
+                                        break;
+                                    case ValueType.STRING:
+                                        {
+                                            if (!columnInfo.Container)
+                                            {
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new TValue<string>("");
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<string>();
+                                                    var tVal = new TValue<string>(val);
+                                                    dataRow.Add(tVal);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                List<string> list = new List<string>();
+                                                if (cell.IsEmpty())
+                                                {
+                                                    var tVal = new ListValue<string>(list);
+                                                    dataRow.Add(tVal);
+                                                }
+                                                else
+                                                {
+                                                    var val = cell.GetValue<string>();
+                                                    var split = val.Split(',');
+
+                                                    foreach (var s in split)
+                                                        list.Add(s);
+
+                                                    var tVal = new ListValue<string>(list);
+                                                    dataRow.Add(tVal);
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.BOOL:
+                                        {
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new TValue<bool>(false);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<bool>();
+                                                var tVal = new TValue<bool>(val);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.DATETIME:
+                                        {
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new TValue<DateTime>(DateTime.Parse("2025-01-01 00:00:00"));
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var tVal = new TValue<DateTime>(DateTime.Parse(val));
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.VEC3:
+                                        {
+                                            if (cell.IsEmpty())
+                                            {
+                                                Vec3 vec = new Vec3();
+                                                vec.x = 0.0f;
+                                                vec.y = 0.0f;
+                                                vec.z = 0.0f;
+                                                var tVal = new Vec3Value(vec);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+                                                if (split.Length != 3)
+                                                {
+                                                    Console.WriteLine($"[Error] Vec3 : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                                    readError = true;
+                                                    continue;
+                                                }
+
+                                                Vec3 vec = new Vec3();
+                                                vec.x = float.Parse(split[0]);
+                                                vec.y = float.Parse(split[1]);
+                                                vec.z = float.Parse(split[2]);
+                                                var tVal = new Vec3Value(vec);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.VEC2:
+                                        {
+                                            if (cell.IsEmpty())
+                                            {
+                                                Vec2 vec = new Vec2();
+                                                vec.x = 0.0f;
+                                                vec.y = 0.0f;
+                                                var tVal = new Vec2Value(vec);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+                                                if (split.Length != 2)
+                                                {
+                                                    Console.WriteLine($"[Error] Vec2 : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                                    readError = true;
+                                                    continue;
+                                                }
+
+                                                Vec2 vec = new Vec2();
+                                                vec.x = float.Parse(split[0]);
+                                                vec.y = float.Parse(split[1]);
+                                                var tVal = new Vec2Value(vec);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    default:
+                                        {
+                                            Console.WriteLine($"[Error] No Match Type : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                            readError = true;
+                                        }
+                                        break;
+                                }
+                            }
+                            else
+                            {
+                                switch (columnInfo.TypeId)
+                                {
+                                    case ValueType.INT:
+                                        {
+                                            List<int> list = new List<int>();
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new ListValue<int>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+
+                                                foreach (var s in split)
+                                                    list.Add(int.Parse(s));
+
+                                                var tVal = new ListValue<int>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.FLOAT:
+                                        {
+                                            List<float> list = new List<float>();
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new ListValue<float>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+
+                                                foreach (var s in split)
+                                                    list.Add(float.Parse(s));
+
+                                                var tVal = new ListValue<float>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.STRING:
+                                        {
+                                            List<string> list = new List<string>();
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new ListValue<string>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+
+                                                foreach (var s in split)
+                                                    list.Add(s);
+
+                                                var tVal = new ListValue<string>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    case ValueType.BOOL:
+                                        {
+                                            List<bool> list = new List<bool>();
+                                            if (cell.IsEmpty())
+                                            {
+                                                var tVal = new ListValue<bool>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                            else
+                                            {
+                                                var val = cell.GetValue<string>();
+                                                var split = val.Split(',');
+
+                                                foreach (var s in split)
+                                                    list.Add(bool.Parse(s));
+
+                                                var tVal = new ListValue<bool>(list);
+                                                dataRow.Add(tVal);
+                                            }
+                                        }
+                                        break;
+                                    default:
+                                        {
+                                            Console.WriteLine($"[Error] No Match Type : {item.Name}, row : {row.RowNumber()}, field : {columnInfo.Name} in Excel: {excelPath}");
+                                            readError = true;
+                                        }
+                                        break;
+                                }
                             }
                         }
                         catch(InvalidCastException e)
@@ -450,10 +691,10 @@ namespace DataTool
                 if (readError)
                     return false;
 
-                while (false == rowDatas.TryAdd(rowData.SheetName, rowData))
+                while (false == rowDatas.Add(rowData.SheetName, rowData))
                 {
-                    if (true == rowDatas.TryGetValue(rowData.SheetName, out var outData))
-                        outData.AddData(rowData);
+                    if (true == rowDatas.Find(rowData.SheetName, out var outData))
+                        outData?.AddData(rowData);
                 }
             }
 
@@ -476,7 +717,7 @@ namespace DataTool
             {
                 var s = pair.Value;
                 RowData? data;
-                rowDatas.TryGetValue(s.SheetName, out data);
+                rowDatas.Find(s.SheetName, out data);
                 if (data == null)
                     continue;
 
