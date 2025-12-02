@@ -104,6 +104,7 @@ namespace DataTool
 
     public struct DataColumn
     {
+        public int Index;
         public string Name;
         public int ColumnNum;
         public ValueType TypeId;
@@ -128,6 +129,7 @@ namespace DataTool
         {
             SheetName = sheetName;
             var idField = new FieldInfo();
+            idField.Index = 0;
             idField.Name = "ID";
             idField.TypeId = ValueType.INT;
             idField.Server = true;
@@ -149,7 +151,7 @@ namespace DataTool
 
         public static Dictionary<string, IValidatable> SchemaHeaderMap = new()
         {
-            { "id", new ValidInt() },
+            { "index", new ValidInt() },
             { "name", new ValidString() },
             { "type", new ValidType() },
             { "container", new ValidBool() },

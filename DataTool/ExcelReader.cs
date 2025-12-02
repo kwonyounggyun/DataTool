@@ -153,6 +153,7 @@ namespace DataTool
                     }
 
                     var dataColumn = new DataColumn();
+                    dataColumn.Index = fieldInfo.Index;
                     dataColumn.Name = colName;
                     dataColumn.ColumnNum = cell.WorksheetColumn().ColumnNumber();
                     dataColumn.TypeId = fieldInfo.TypeId;
@@ -242,6 +243,9 @@ namespace DataTool
 
                         switch(pair.Key)
                         {
+                            case "index":
+                                fieldInfo.Index = cell.GetValue<int>();
+                                break;
                             case "name":
                                 fieldInfo.Name = cell.GetValue<string>();
                                 break;
@@ -318,6 +322,8 @@ namespace DataTool
                 var header = new List<DataColumn>();
                 foreach (var pair in readDataHeader)
                     header.Add(pair.Value);
+
+                header.Sort((a, b) => a.Index.CompareTo(b.Index));
 
                 var rowData = new RowData(item.Name, header);
                 int rowCount = 0;
