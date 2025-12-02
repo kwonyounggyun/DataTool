@@ -133,7 +133,7 @@ namespace DataTool.Generator
             subBlock.SetBlockName($"namespace {usingNamespace}");
             subBlock.AddBlock(GenerateStaticDataClass(usingNamespace, schemaInfos, server));
 
-            var header = usingNamespace + ".h";
+            var header = "StaticData.h";
             try
             {
                 // 파일에 content 내용을 씁니다. 파일이 이미 있다면 덮어씁니다.

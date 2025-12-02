@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DataTool": {
+      "commandName": "Project",
+      "commandLineArgs": "--input D:/Projects -s cpp -c cs -sn bugat::GameDB -cn bugat.GameDB"
+    }
+  }
+}

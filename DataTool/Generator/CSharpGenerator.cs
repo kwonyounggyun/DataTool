@@ -46,7 +46,7 @@ namespace DataTool.Generator
 
             main.AddBlock(GenerateStaticDataClass(usingNamespace, schemaInfos, server));
 
-            var header = usingNamespace + ".cs";
+            var header = "StaticData.cs";
             try
             {
                 // 파일에 content 내용을 씁니다. 파일이 이미 있다면 덮어씁니다.
