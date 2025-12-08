@@ -13,8 +13,6 @@ using System.Threading.Tasks;
 
 namespace DataTool.Generator
 {
-    
-
     sealed class CPPClassBlock : CodeBlock
     {
         public override string MakeCode(int indentCount = 0)
